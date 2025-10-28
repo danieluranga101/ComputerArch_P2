@@ -1,0 +1,122 @@
+    LOAD FF   //A=n (TAG: "OUTER_LOOP_START")
+    SUB EF    //A=n-i ; if n<i => negative flag set then exit
+    JN 2A     //if negative flag set, exit (Goto TAG: EXIT)
+    LOAD EB   //A=0
+    STORE ED  //Reset swap flag (swp = 0)
+    LOAD EA   //A=0xFE
+    SUB FF    //A=0xFE-n
+    ADD EF    //A=0xFE-n+i (Calculate exit condition for inner loop) 
+    ADD E6    //A=0xFE-n-i+1
+    STORE E9  //Store exit condition for inner loop
+    LOAD EA   //Reset j to 0xFE
+    STORE EE  //Store this value to 'j'
+    LOAD EE   //A=j (TAG:"INNER_LOOP_START")
+    SUB E9    //A=j-(0xFE-n-i+1) ; If (0xFE-n-i+1)>j => negative flag is set then exit inner loop
+    JZ 23     //If zero flag, exit inner loop (Goto TAG: EXIT_INNER_LOOP)
+    LOAD EE   //A=j
+    SUB E6    //A=j-1
+    STORE E8  //Store j-1
+    LOADI E8  //A=a[j-1]
+    STORE E7  //Store a[j-1]
+    LOADI EE  //A=a[j]
+    SUB E7    //A=a[j] - a[j-1] ; If a[j] < a[j-1] (Negative Flag Set); do not swap and decrement inner loop counter else swap
+    JN 1F     //(Goto TAG: INNER_LOOP_DCR)
+    LOADI EE  //A=a[j]
+    STORE EC  //tmp=a[j]
+    LOAD E7   //A=a[j-1]
+    STOREI EE //a[j] = a[j-1]
+    LOAD EC   //A=tmp
+    STOREI E8 //a[j-1] = tmp 
+    LOAD E6   //A=1
+    STORE ED  //Swapp flag = 1
+    LOAD EE   //A=j (TAG:"INNER_LOOP_DCR")
+    SUB E6    //A=j-1
+    STORE EE  
+    JMP C     //Go to start of inner loop (Goto TAG: INNER_LOOP_START)
+    LOAD ED   //A=swp (Swap flag) (TAG:"EXIT_INNER_LOOP")
+    OR EB     //A=swp||0 ; If (A=swp||0 = 0) (implies swap flag is zero)  then nothing swapped, HALT else increment outer loop counter
+    JZ 2A     //(Goto TAG: EXIT)
+    LOAD EF   //A=i 
+    ADD E6    //A=i+1
+    STORE EF  //Store changed value of i
+    JMP 00    //Go to start of inner loop(Goto TAG: OUTER_LOOP_START)
+    HALT 00   //(TAG:"EXIT")
+
+
+//==================================================================================================================================
+// GROUP MEMBERS: Daniel Uranga, Praba Arumugam, Shimoli Shinde, William Ostrum 
+// SECTION: ECE532 
+//
+// DESCRIPTION: 
+// Given a list of n numbers stored in addresses 0xFF-(n) to 0xFF -1, 
+// and the value n stored in 0xFF, sort the n numbers from smallest to largest. 
+// Store the final sorted list in address 0xFF-(n) to 0xFF -1
+// with smallest value om 0xFF-(n) to 0xFF-1
+// Note: n<=15
+// This code uses bubble sort algorithm for sorting and is optimized for time
+//
+// USAGE:
+// 1. Specify size 'n' of list to be sorted at address: 0xFF
+//    Note: size 'n' <= 15
+// 2. Specify the list of numbers at address: 0xFF-(n) to 0xFF-(1)
+// 3. Additionally, following values must be set in memory as they will be used as loop counters, flags, etc.
+//  0xE6 : 1 (Store 1 value for immediate load)
+//  0xEA : 0xFE (Start address of data)
+//  0xEB : 0 (Store zero value for immediate load)
+//  0xED : 0 (Swapped Flag; Initial value=0)
+//  0xEE : 0xFE (j: Inner Loop Counter; Initial value = 0xFE)
+//  0xEF : 0 (i: Outer Loop counter; Initial value = 0)
+//
+// OUTPUT:
+// Sorted list at 0xFF-(n) to 0xFF-(1) with smallest number at 0xFF-(1) and largest at 0xFF-(n)
+//
+// EVALUATION METRICS:
+// Total temporary variables: ~10
+// Total instructions: 
+//  Best case (Input data sorted from smallest to largest): (15n - 5) instructions
+//  Worst case (Input data sorted largest to smallest): (12n^2) instructions 
+//
+// PSUEDO-CODE:
+//    for (i=0 ; i<n ; i++) {
+//        swp = 0;
+//        for (j=0xFE; j>0xFE-n-i; j--){
+//            if (a[j] > a[j-1]){     //Swap
+//                tmp = a[j];
+//                a[j] = a[j-1];
+//                a[j-1] = tmp;
+//                swp = 1;
+//            } 
+//        }
+//        if (!swp) {     //All swapped, exit early
+//            break;
+//        }
+//    }
+// 
+// MEMORY MAP FOR VARIABLES:
+// 0xE6 : 1 (Store 1 value for immediate load)
+// 0xE7 : a[j-1]
+// 0xE8 : j-1
+// 0xE9 : 0xFE-n-i (Exit condition for inner loop)
+// 0xEA : 0xFE (Start address of data)
+// 0xEB : 0 (Store zero value for immediate load)
+// 0xEC : tmp (variable used to store temporary value during swap operation)
+// 0xED : swp (Swapped Flag; Initial value=0)
+// 0xEE : j (j: Inner Loop Counter; Initial value = 0xFE)
+// 0xEF : i (i: Outer Loop counter; Initial value = 0)
+// 0xF0 to 0xFE : Input Data list
+// 0xFF : n (Size of list)
+//
+// MEMORY MAP FOR .mem File
+// E5 000000000000
+// E6 000000000001
+// E7 000000000000
+// E8 000000000000
+// E9 000000000000
+// EA 000011111110
+// EB 000000000000
+// EC 000000000000
+// ED 000000000000
+// EE 000011111110
+//EF 000000000000
+
+//==================================================================================================================================

@@ -1,0 +1,81 @@
+LOAD  E7          // E7 = 0 (constant 0)
+STORE E8          // i = 0 (outer loop index)
+LOAD  FF          // A = n (size of the array)
+SUB   E6          // A = n - 1
+SUB   E8          // A = (n - 1) - i
+JN    35          // If i > n - 1, exit outer loop
+LOAD  E8          // A = i
+STORE EA          // minIdx = i (initialize minIdx to i)
+LOAD  E8          // A = i
+ADD   E6          // A = i + 1
+STORE E9          // j = i + 1 (initialize inner loop index)
+LOAD  FF          // A = n (size of the array)
+SUB   E6          // A = n - 1
+SUB   E9          // A = n - 1 - j
+JN    20          // If j > n - 1, exit inner loop
+LOAD  E5          // A = base addr
+ADD   E9          // A = base + j
+STORE EC          // addr1 = base + j
+LOADI EC          // A = a[j]
+STORE EB          // tmp1 = a[j]
+LOAD  E5          // A = base addr
+ADD   EA          // A = base + minIdx
+STORE EC          // addr1 = base + minIdx
+LOADI EC          // A = a[minIdx]
+SUB   EB          // A = a[minIdx] - a[j]
+JN    1C          // If a[minIdx] < a[j], skip updating minIdx
+LOAD  E9          // A = j
+STORE EA          // minIdx = j
+LOAD  E9          // A = j
+ADD   E6          // A = j + 1
+STORE E9          // j = j + 1
+JMP   0B          // Jump to inner loop
+LOAD  E8          // A = i
+SUB   EA          // A = i - minIdx
+JZ    31          // If i == minIdx, skip swap
+LOAD  E5          // A = base addr
+ADD   E8          // A = base + i
+STORE EC          // addr1 = base + i
+LOADI EC          // A = a[i]
+STORE EB          // tmp1 = a[i]
+LOAD  E5          // A = base addr
+ADD   EA          // A = base + minIdx
+STORE EE          // addr2 = base + minIdx
+LOADI EE          // A = a[minIdx]
+STORE ED          // tmp2 = a[minIdx]
+LOAD  EB          // A = tmp1 (value of a[i])
+STOREI EE         // a[minIdx] = tmp1
+LOAD ED           // A = tmp2
+STOREI EC         // a[i] = tmp2
+LOAD  E8          // A = i
+ADD   E6          // A = i + 1
+STORE E8          // i = i + 1
+JMP   02          // Jump to outer loop
+HALT  00
+
+// GROUP MEMBERS: Daniel Uranga, Praba Arumugam, Shimoli Shinde, William Ostrum 
+// SECTION: ECE532 
+//
+// DESCRIPTION: 
+// Given a list of n numbers stored in addresses 0xFF-(n) to 0xFF -1, 
+// and the value n stored in 0xFF, sort the n numbers from smallest to largest. 
+// Store the final sorted list in address 0xFF-(n) to 0xFF -1
+// with smallest value at 0xFF-(n) and largest at 0xFF-1
+
+// This code uses SELECTION SORT algorithm and is optimized for memory usage.
+//==================================================================================================================================
+//
+// MEMORY MAP FOR VARIABLES (reuse as much as possible):
+// 0xE6 : 1 (constant 1)
+// 0xE7 : 0 (constant 0)
+// 0xE8 : i (outer index)
+// 0xE9 : j (inner index)
+// 0xEA : minIdx (index of current minimum)
+// 0xEB : tmp1 (temporary storage for swapping)
+// 0xEC : addr (address scratch register)
+// 0xED : tmp2 (temporary storage for swapping)
+// 0xEE : addr (address scratch register)
+// 0xFF : n (size of array)
+// 0xF0..0xFE : data elements
+//
+//==================================================================================================================================
