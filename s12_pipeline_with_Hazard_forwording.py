@@ -34,12 +34,12 @@ Sections Overview:
 from typing import List, Dict, Any
 
 class Instruction:
-    def __init__(self, opcode, operands=None):
+    def __init__(self, opcode, operand=None):
         self.opcode = opcode
-        self.operands = operands if operands is not None else []
+        self.operand = operand if operand is not None else 0
 
     def __repr__(self):
-        return f"Instruction(opcode={self.opcode}, operands={self.operands})"
+        return f"Instruction(opcode={self.opcode}, operand={self.operand})"
 
 
 # Processor Architecture State initilization (Registers, Flags, and Memory)
@@ -95,7 +95,6 @@ def decode_instruction(IF_ID_reg):
 
     instr = IF_ID_reg["instr"]
     op = instr.opcode.upper()
-    ops = instr.operands
 
     # Control defaults
     control = {
@@ -121,56 +120,54 @@ def decode_instruction(IF_ID_reg):
     elif op == "LOADI":
         # LOADI x  => ACC <- MEM[ MEM[x] ]
         control.update({"is_loadi": True})
-        operand8 = int(ops[0]) & 0xFF   # & 0xFF — it’s a mask that ensures to keep only the lowest 8 bits of the operand
+        operand8 = int(instr.operand) & 0xFF   # & 0xFF — it’s a mask that ensures to keep only the lowest 8 bits of the operand
 
     elif op == "STOREI":
         # STOREI x => MEM[ MEM[x] ] <- ACC
         control.update({"is_storei": True})
-        operand8 = int(ops[0]) & 0xFF
+        operand8 = int(instr.operand) & 0xFF
 
     elif op == "LOAD":
         # LOAD x   => ACC <- MEM[x]
         control.update({"is_load": True})
-        operand8 = int(ops[0]) & 0xFF
+        operand8 = int(instr.operand) & 0xFF
 
     elif op == "STORE":
         # STORE x  => MEM[x] <- ACC
         control.update({"is_store": True})
-        operand8 = int(ops[0]) & 0xFF
+        operand8 = int(instr.operand) & 0xFF
 
     elif op == "ADD":
         control.update({"is_alu": True, "alu_op": "ADD", "alu_uses_mem": True})
-        operand8 = int(ops[0]) & 0xFF
+        operand8 = int(instr.operand) & 0xFF
 
     elif op == "SUB":
         control.update({"is_alu": True, "alu_op": "SUB", "alu_uses_mem": True})
-        operand8 = int(ops[0]) & 0xFF
+        operand8 = int(instr.operand) & 0xFF
     elif op == "AND":
         control.update({"is_alu": True, "alu_op": "AND", "alu_uses_mem": True})
-        operand8 = int(ops[0]) & 0xFF
+        operand8 = int(instr.operand) & 0xFF
 
     elif op == "OR":
         control.update({"is_alu": True, "alu_op": "OR", "alu_uses_mem": True})
-        operand8 = int(ops[0]) & 0xFF
-
+        operand8 = int(instr.operand) & 0xFF
 
     elif op == "JMP":
         control.update({"is_jump_uncond": True})
-        operand8 = int(ops[0]) & 0xFF
+        operand8 = int(instr.operand) & 0xFF
 
     elif op == "JZ":
         control.update({"is_jump_zero": True})
-        operand8 = int(ops[0]) & 0xFF
+        operand8 = int(instr.operand) & 0xFF
 
     elif op == "JN":
         control.update({"is_jump_neg": True})
-        operand8 = int(ops[0]) & 0xFF
-        
-    else:
-        
+        operand8 = int(instr.operand) & 0xFF
+      
+    else:      
         op = "NOP"
-  #creates the ID/EX pipeline register, which holds the decoded instruction, operand, snapshots of ACC and flags, and all control signals
-  #ensuring the next pipeline stage has every piece of information
+    #creates the ID/EX pipeline register, which holds the decoded instruction, operand, snapshots of ACC and flags, and all control signals
+    #ensuring the next pipeline stage has every piece of information
     return {
         "opcode": op,
         "operand": operand8,                 # N LOADI/STOREI this is the POINTER LOCATION x
@@ -409,7 +406,8 @@ def run(program, max_cycles=20, start_pc=0, initial_mem=None) -> List[Dict[str, 
                 return None
             d = dict(reg)
             if "instr" in d and isinstance(d["instr"], Instruction):
-                d["instr"] = {"opcode": d["instr"].opcode, "operands": list(d["instr"].operands)}
+                d["instr"] = {"opcode": d["instr"].opcode, "operand": d["instr"].operand}
+
             return d
         return {
             "cycle": cycles,
@@ -484,7 +482,7 @@ def run(program, max_cycles=20, start_pc=0, initial_mem=None) -> List[Dict[str, 
 
     return trace
 
-#------------------------------------------xxxxx-----------------------------------------------------------------------------------------------
+#-----------------------------------------------------------------------------------------------------------------------------------------
 # Program to verify implementation
 
 if __name__ == "__main__":
@@ -505,54 +503,54 @@ if __name__ == "__main__":
 
     program = [
         #  0
-        Instruction('LOADI', [5]),      # ACC <- M[M[5]] = M[10] = 50
-        Instruction('NOP', []),         # 1
-        Instruction('NOP', []),         # 2
+        Instruction('LOADI', 5),      # ACC <- M[M[5]] = M[10] = 50
+        Instruction('NOP'),           # 1
+        Instruction('NOP'),           # 2
 
-        Instruction('ADD', [10]),       # 3  ACC <- ACC + M[10] = 50 + 50 = 100
-        Instruction('NOP', []),         # 4
-        Instruction('NOP', []),         # 5
+        Instruction('ADD', 10),       # 3  ACC <- ACC + M[10] = 50 + 50 = 100
+        Instruction('NOP'),           # 4
+        Instruction('NOP'),           # 5
 
-        Instruction('STOREI', [20]),    # 6  M[M[20]] <- ACC  => M[30] = 100
-        Instruction('NOP', []),         # 7
-        Instruction('NOP', []),         # 8
+        Instruction('STOREI', 20),    # 6  M[M[20]] <- ACC  => M[30] = 100
+        Instruction('NOP'),           # 7
+        Instruction('NOP'),           # 8
 
-        Instruction('STORE', [40]),     # 9  M[40] <- ACC  => 100
-        Instruction('NOP', []),         # 10
+        Instruction('STORE', 40),     # 9  M[40] <- ACC  => 100
+        Instruction('NOP'),           # 10
 
-        Instruction('LOAD', [40]),      # 11 ACC <- M[40] = 100
-        Instruction('NOP', []),         # 12
-        Instruction('NOP', []),         # 13
+        Instruction('LOAD', 40),      # 11 ACC <- M[40] = 100
+        Instruction('NOP'),           # 12
+        Instruction('NOP'),           # 13
 
-        Instruction('AND', [25]),       # 14 ACC <- 100 & 25 = 0
-        Instruction('NOP', []),         # 15
-        Instruction('NOP', []),         # 16
+        Instruction('AND', 25),       # 14 ACC <- 100 & 25 = 0
+        Instruction('NOP'),           # 15
+        Instruction('NOP'),           # 16
 
-        Instruction('OR',  [25]),       # 17 ACC <- 0 | 25 = 25
-        Instruction('NOP', []),         # 18
-        Instruction('NOP', []),         # 19
+        Instruction('OR', 25),        # 17 ACC <- 0 | 25 = 25
+        Instruction('NOP'),           # 18
+        Instruction('NOP'),           # 19
 
-        Instruction('SUB', [25]),       # 20 ACC <- 25 - 25 = 0  (Z=1, N=0)
-        Instruction('NOP', []),         # 21
-        Instruction('NOP', []),         # 22
+        Instruction('SUB', 25),       # 20 ACC <- 25 - 25 = 0  (Z=1, N=0)
+        Instruction('NOP'),           # 21
+        Instruction('NOP'),           # 22
 
-        Instruction('SUB', [60]),       # 23 ACC <- 0 - 100 = 156 (0x9C), N=1
-        Instruction('NOP', []),         # 24
-        Instruction('NOP', []),         # 25
+        Instruction('SUB', 60),       # 23 ACC <- 0 - 100 = 156 (0x9C), N=1
+        Instruction('NOP'),           # 24
+        Instruction('NOP'),           # 25
 
-        Instruction('JN',  [32]),       # 26 if N=1 jump to index 32 (target below)
-        Instruction('NOP', []),         # 27 padding so prefetched instrs are harmless
-        Instruction('NOP', []),         # 28
+        Instruction('JN', 32),        # 26 if N=1 jump to index 32 (target below)
+        Instruction('NOP'),           # 27 padding so prefetched instrs are harmless
+        Instruction('NOP'),           # 28
 
         # Fallthrough path (should be skipped because N=1)
-        Instruction('ADD', [61]),       # 29 would do ACC <- ACC + 1
-        Instruction('STORE', [50]),     # 30 would store to M[50]
-        Instruction('HALT', []),        # 31 would halt if we didn't jump
+        Instruction('ADD', 61),       # 29 would do ACC <- ACC + 1
+        Instruction('STORE', 50),     # 30 would store to M[50]
+        Instruction('HALT'),          # 31 would halt if we didn't jump
 
         # Jump target:
-        Instruction('LOAD', [30]),      # 32 ACC <- M[30] = 100  (stored earlier by STOREI)
-        Instruction('NOP', []),         # 33 padding to let LOAD reach WB before HALT
-        Instruction('HALT', []),        # 34 final stop
+        Instruction('LOAD', 30),      # 32 ACC <- M[30] = 100  (stored earlier by STOREI)
+        Instruction('NOP'),           # 33 padding to let LOAD reach WB before HALT
+        Instruction('HALT'),          # 34 final stop
     ]
 
     initial_mem = {
