@@ -34,12 +34,39 @@ Sections Overview:
 from typing import List, Dict, Any
 
 class Instruction:
+    opcodes = {
+        0x0: 'JMP',
+        0x1: 'JN',
+        0x2: 'JZ',
+        0x4: 'LOAD',
+        0x5: 'STORE',
+        0x6: 'LOADI',
+        0x7: 'STOREI',
+        0x8: 'AND',
+        0x9: 'OR',
+        0xA: 'ADD',
+        0xB: 'SUB',
+        0xE: 'NOP',
+        0xF: 'HALT'
+    }
     def __init__(self, opcode, operand=None):
-        self.opcode = opcode
+        # if opcode is in string format, convert to int
+        if isinstance(opcode, str):
+            self.opcode = {v: k for k, v in Instruction.opcodes.items()}.get(opcode.upper(), 0)
+            # print(f"Converted opcode string {opcode} to int: {self.opcode}")
+        else:
+            self.opcode = opcode if operand is not None else 0
         self.operand = operand if operand is not None else 0
 
     def __repr__(self):
         return f"Instruction(opcode={self.opcode}, operand={self.operand})"
+
+    def opcode_to_string(self):
+        # lookup opcode name from value
+        return Instruction.opcodes.get(self.opcode, 'NOP')
+
+    def opcode_to_int(opcode_str):
+        return {v: k for k, v in Instruction.opcodes.items()}.get(opcode_str.upper(), 0)
 
 
 # Processor Architecture State initilization (Registers, Flags, and Memory)
@@ -94,7 +121,7 @@ def decode_instruction(IF_ID_reg):
         return None
 
     instr = IF_ID_reg["instr"]
-    op = instr.opcode.upper()
+    op = instr.opcode_to_string().upper()
 
     # Control defaults
     control = {
@@ -108,7 +135,7 @@ def decode_instruction(IF_ID_reg):
         "is_alu": False,      # arithmetic with immediate
         "alu_uses_mem": False,
         "is_halt": False,     #Stop execution
-        "alu_op": "NOP"
+        "alu_op": 14,          # NOP by default
     }
     operand8 = 0
 
@@ -138,18 +165,18 @@ def decode_instruction(IF_ID_reg):
         operand8 = int(instr.operand) & 0xFF
 
     elif op == "ADD":
-        control.update({"is_alu": True, "alu_op": "ADD", "alu_uses_mem": True})
+        control.update({"is_alu": True, "alu_op": Instruction.opcode_to_int("ADD"), "alu_uses_mem": True})
         operand8 = int(instr.operand) & 0xFF
 
     elif op == "SUB":
-        control.update({"is_alu": True, "alu_op": "SUB", "alu_uses_mem": True})
+        control.update({"is_alu": True, "alu_op": Instruction.opcode_to_int("SUB"), "alu_uses_mem": True})
         operand8 = int(instr.operand) & 0xFF
     elif op == "AND":
-        control.update({"is_alu": True, "alu_op": "AND", "alu_uses_mem": True})
+        control.update({"is_alu": True, "alu_op": Instruction.opcode_to_int("AND"), "alu_uses_mem": True})
         operand8 = int(instr.operand) & 0xFF
 
     elif op == "OR":
-        control.update({"is_alu": True, "alu_op": "OR", "alu_uses_mem": True})
+        control.update({"is_alu": True, "alu_op": Instruction.opcode_to_int("OR"), "alu_uses_mem": True})
         operand8 = int(instr.operand) & 0xFF
 
     elif op == "JMP":
@@ -169,7 +196,7 @@ def decode_instruction(IF_ID_reg):
     #creates the ID/EX pipeline register, which holds the decoded instruction, operand, snapshots of ACC and flags, and all control signals
     #ensuring the next pipeline stage has every piece of information
     return {
-        "opcode": op,
+        "opcode": instr.opcode,
         "operand": operand8,                 # N LOADI/STOREI this is the POINTER LOCATION x
         "pc": IF_ID_reg["pc"],
         "acc_snapshot": ACC & 0xFF,
@@ -209,7 +236,7 @@ def execute_instruction(ID_EX_reg):
             "operand": 0,
             "acc_snapshot": acc_val,
             "mem_addr": 0,
-            "opcode": "HALT",
+            "opcode": Instruction.opcode_to_int("HALT"),  # HALT opcode
             "flags_snapshot": (Z_snap, N_snap),
             "control": control,
             "valid": True,
@@ -228,13 +255,13 @@ def execute_instruction(ID_EX_reg):
     # ALU path — ONLY for explicit ALU ops (LOADI no longer uses ALU)
     if control["is_alu"] and not control.get("alu_uses_mem", False):
         op = control.get("alu_op", "NOP")
-        if op == "ADD":
+        if op == Instruction.opcode_to_int("ADD"):
             alu_out = mask8(acc_val + operand)
-        elif op == "SUB":
+        elif op == Instruction.opcode_to_int("SUB"):
             alu_out = mask8(acc_val - operand)
-        elif op == "AND":
+        elif op == Instruction.opcode_to_int("AND"):
             alu_out = mask8(acc_val & operand)
-        elif op == "OR":
+        elif op == Instruction.opcode_to_int("OR"):
             alu_out = mask8(acc_val | operand)
         else:
             alu_out = mask8(acc_val)
@@ -298,13 +325,13 @@ def memory_access(EX_MEM_reg):
         m = MEM.get(addr_x, 0) & 0xFF
         a = EX_MEM_reg["acc_snapshot"] & 0xFF
         op = control.get("alu_op", "NOP")
-        if op == "ADD":
+        if op == Instruction.opcode_to_int("ADD"):
             alu_out = mask8(a + m)
-        elif op == "SUB":
+        elif op == Instruction.opcode_to_int("SUB"):
             alu_out = mask8(a - m)
-        elif op == "AND":
+        elif op == Instruction.opcode_to_int("AND"):
             alu_out = mask8(a & m)
-        elif op == "OR":
+        elif op == Instruction.opcode_to_int("OR"):
             alu_out = mask8(a | m)
 
     return {
@@ -500,7 +527,6 @@ if __name__ == "__main__":
       MEM[60] = 100    (operand for SUB to force negative -> N=1)
       MEM[61] = 1      (operand used on the fallthrough path if JN not taken)
     """
-
     program = [
         #  0
         Instruction('LOADI', 5),      # ACC <- M[M[5]] = M[10] = 50
