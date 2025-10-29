@@ -41,6 +41,43 @@ Z: int = 0        # zero flag
 N: int = 0        # negative flag (bit7)
 MEM: Dict[int, int] = {i: 0 for i in range(256)}  # Main Memory
 pc: int = 0       # 8-bit Program Counter
+perf_counters = {
+    "cycles": 0,
+    "instructions": 0,
+    "stalls": 0,
+    "flushes": 0,
+    "forwards": {
+        "EX_MEM": 0,
+        "MEM_WB": 0
+    },
+    "instruction_mix": {
+        "LOAD": 0,
+        "STORE": 0,
+        "LOADI": 0,
+        "STOREI": 0,
+        "ADD": 0,
+        "SUB": 0,
+        "AND": 0,
+        "OR": 0,
+        "JMP": 0,
+        "JN": 0,
+        "JZ": 0,
+        "HALT": 0,
+        "NOP": 0
+    }
+}
+def display_performance_counters():
+    print("Performance Counters:")
+    print(f"Total Cycles: {perf_counters['cycles']}")
+    print(f"Total Instructions Executed: {perf_counters['instructions']}")
+    print(f"Total Stalls: {perf_counters['stalls']}")
+    print(f"Total Flushes: {perf_counters['flushes']}")
+    print("Data Forwards:")
+    for stage, count in perf_counters['forwards'].items():
+        print(f"  From {stage}: {count}")
+    print("Instruction Mix:")
+    for instr, count in perf_counters['instruction_mix'].items():
+        print(f"  {instr}: {count}")
 
 # Pipeline registers
 pipeline_regs = {
@@ -104,6 +141,8 @@ def decode_instruction(IF_ID_reg):
     }
     operand8 = 0
 
+    # Increment instruction count for non-NOPs
+
     if op == "NOP":
         pass
     elif op=="HALT":
@@ -145,6 +184,7 @@ def decode_instruction(IF_ID_reg):
         operand8 = int(instr.operand) & 0xFF
 
     elif op == "JMP":
+        print(f"Decoding JMP instruction at PC={IF_ID_reg['pc']}")
         control.update({"is_jump_uncond": True})
         operand8 = int(instr.operand) & 0xFF
 
@@ -365,12 +405,14 @@ def forwarding(ID_EX_reg, EX_MEM_reg, MEM_WB_reg, acc_snapshot):
         c = EX_MEM_reg["control"]
         if c.get("is_alu"):
             acc_val = EX_MEM_reg["alu_out"]
+            perf_counters["forwards"]["EX_MEM"] += 1
 
     # Forward from MEM/WB (highest priority)
     if MEM_WB_reg and MEM_WB_reg.get("valid", False):
         c = MEM_WB_reg["control"]
         if c.get("is_alu") or c.get("is_load") or c.get("is_loadi"):
             acc_val = MEM_WB_reg.get("data_mem", MEM_WB_reg.get("alu_out", acc_val))
+            perf_counters["forwards"]["MEM_WB"] += 1
 
     return acc_val
 
@@ -428,11 +470,13 @@ def run(initial_mem, max_cycles=20, start_pc=0) -> List[Dict[str, Any]]:
 
         if flush:
             print(f"[CYCLE {cycles}] Control hazard = Flushing IF/ID and ID/EX")
+            perf_counters["flushes"] += 1
             pipeline_regs['IF_ID'] = None
             pipeline_regs['ID_EX'] = None
 
         if stall:
             print(f"[CYCLE {cycles}] Data hazard = Stalling pipeline 1 cycle")
+            perf_counters["stalls"] += 1
             pc = (pc - 1) & 0xFF  # freeze fetch
             pipeline_regs['ID_EX'] = None
         # ID
@@ -441,7 +485,13 @@ def run(initial_mem, max_cycles=20, start_pc=0) -> List[Dict[str, Any]]:
         pipeline_regs['IF_ID'] = fetch_instruction(MEM, pc)
         pc = (pc + 1) & 0xFF
         
-         
+        # Update instruction mix counter
+        if pipeline_regs['MEM_WB'] and pipeline_regs['MEM_WB'].get('valid', False):
+            inst = Instruction(pipeline_regs['MEM_WB']['opcode'], 0)
+            if inst.opcode_to_string() != "NOP":
+                perf_counters["instruction_mix"][inst.opcode_to_string().upper()] += 1 if inst is not None else 0
+                perf_counters["instructions"] += 1
+
         #  Trace helper : prints the useful info
         
         wb = pipeline_regs['MEM_WB']
@@ -467,9 +517,9 @@ def run(initial_mem, max_cycles=20, start_pc=0) -> List[Dict[str, Any]]:
             trace.append(snapshot())
             break
 
-
         trace.append(snapshot())
         cycles += 1
+        perf_counters["cycles"] += 1
 
     return trace
 
@@ -584,3 +634,5 @@ if __name__ == "__main__":
     assert MEM[45] == 100, "MEM[40] should be 100 (written by STORE)"
     assert MEM.get(50, 0) == 0, "MEM[50] should be 0 (fallthrough skipped by JN)"
     print(" All expected results match.")
+
+    display_performance_counters()
