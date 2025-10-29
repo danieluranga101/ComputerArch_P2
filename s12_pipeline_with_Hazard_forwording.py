@@ -532,34 +532,34 @@ if __name__ == "__main__":
     LOADI, ADD, STOREI, LOAD, STORE, AND, OR, SUB, JN, HALT
 
     Memory Setup:
-      MEM[5]  = 10     (pointer for LOADI)
-      MEM[10] = 50     (value for LOADI’s indirect read and for ADD via M[10])
-      MEM[20] = 30     (pointer for STOREI)
-      MEM[30] = 0      (target of STOREI; will become 100)
-      MEM[25] = 25     (operand used by AND/OR/SUB)
-      MEM[40] = 0      (will be written by STORE with 100)
+      MEM[40]  = 41     (pointer for LOADI)
+      MEM[41] = 50     (value for LOADI’s indirect read and for ADD via M[10])
+      MEM[42] = 43     (pointer for STOREI)
+      MEM[43] = 0      (target of STOREI; will become 100)
+      MEM[44] = 25     (operand used by AND/OR/SUB)
+      MEM[45] = 0      (will be written by STORE with 100)
       MEM[60] = 100    (operand for SUB to force negative -> N=1)
       MEM[61] = 1      (operand used on the fallthrough path if JN not taken)
     """
     program = [
         #  0
-        Instruction('LOADI', 40),      # ACC <- M[M[5]] = M[10] = 50
-        Instruction('NOP'),           # 1
+        Instruction('LOADI', 40),      # ACC <- M[M[40]] = M[41] = 50
+        #Instruction('NOP'),           # 1
         Instruction('NOP'),           # 2
 
-        Instruction('ADD', 41),       # 3  ACC <- ACC + M[10] = 50 + 50 = 100
+        Instruction('ADD', 41),       # 3  ACC <- ACC + M[41] = 50 + 50 = 100
         Instruction('NOP'),           # 4
         Instruction('NOP'),           # 5
 
-        Instruction('STOREI', 42),    # 6  M[M[20]] <- ACC  => M[30] = 100
-        Instruction('NOP'),           # 7
+        Instruction('STOREI', 42),    # 6  M[M[42]] <- ACC  => M[43] = 100
+        #Instruction('NOP'),           # 7
         Instruction('NOP'),           # 8
 
-        Instruction('STORE', 45),     # 9  M[40] <- ACC  => 100
-        Instruction('NOP'),           # 10
+        Instruction('STORE', 45),     # 9  M[45] <- ACC  => 100
+        #Instruction('NOP'),           # 10
 
-        Instruction('LOAD', 45),      # 11 ACC <- M[40] = 100
-        Instruction('NOP'),           # 12
+        Instruction('LOAD', 45),      # 11 ACC <- M[45] = 100
+        #Instruction('NOP'),           # 12
         Instruction('NOP'),           # 13
 
         Instruction('AND', 44),       # 14 ACC <- 100 & 25 = 0
@@ -571,16 +571,17 @@ if __name__ == "__main__":
         Instruction('NOP'),           # 19
 
         Instruction('SUB', 44),       # 20 ACC <- 25 - 25 = 0  (Z=1, N=0)
-        Instruction('NOP'),           # 21
+        #Instruction('NOP'),           # 21
         Instruction('NOP'),           # 22
 
         Instruction('SUB', 60),       # 23 ACC <- 0 - 100 = 156 (0x9C), N=1
         Instruction('NOP'),           # 24
         Instruction('NOP'),           # 25
 
-        Instruction('JN', 32),        # 26 if N=1 jump to index 32 (target below)
-        Instruction('NOP'),           # 27 padding so prefetched instrs are harmless
-        Instruction('NOP'),           # 28
+        # SHRINK 25 to adjust for removed NOPs
+        Instruction('JN', 25),        # 26 if N=1 jump to index 25 (target below)
+        #Instruction('NOP'),           # 27 padding so prefetched instrs are harmless
+        #Instruction('NOP'),           # 28
 
         # Fallthrough path (should be skipped because N=1)
         Instruction('ADD', 61),       # 29 would do ACC <- ACC + 1
@@ -589,7 +590,7 @@ if __name__ == "__main__":
 
         # Jump target:
         Instruction('LOAD', 43),      # 32 ACC <- M[30] = 100  (stored earlier by STOREI)
-        Instruction('NOP'),           # 33 padding to let LOAD reach WB before HALT
+        #Instruction('NOP'),           # 33 padding to let LOAD reach WB before HALT
         Instruction('HALT'),          # 34 final stop
     ]
 
