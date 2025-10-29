@@ -32,42 +32,7 @@ Sections Overview:
 
 
 from typing import List, Dict, Any
-
-class Instruction:
-    opcodes = {
-        0x0: 'JMP',
-        0x1: 'JN',
-        0x2: 'JZ',
-        0x4: 'LOAD',
-        0x5: 'STORE',
-        0x6: 'LOADI',
-        0x7: 'STOREI',
-        0x8: 'AND',
-        0x9: 'OR',
-        0xA: 'ADD',
-        0xB: 'SUB',
-        0xE: 'NOP',
-        0xF: 'HALT'
-    }
-    def __init__(self, opcode, operand=None):
-        # if opcode is in string format, convert to int
-        if isinstance(opcode, str):
-            self.opcode = {v: k for k, v in Instruction.opcodes.items()}.get(opcode.upper(), 0)
-            # print(f"Converted opcode string {opcode} to int: {self.opcode}")
-        else:
-            self.opcode = opcode if operand is not None else 0
-        self.operand = operand if operand is not None else 0
-
-    def __repr__(self):
-        return f"Instruction(opcode={self.opcode}, operand={self.operand})"
-
-    def opcode_to_string(self):
-        # lookup opcode name from value
-        return Instruction.opcodes.get(self.opcode, 'NOP')
-
-    def opcode_to_int(opcode_str):
-        return {v: k for k, v in Instruction.opcodes.items()}.get(opcode_str.upper(), 0)
-
+from process_mem import Instruction
 
 # Processor Architecture State initilization (Registers, Flags, and Memory)
 
@@ -75,7 +40,6 @@ ACC: int = 0      # 8-bit accumulator reg
 Z: int = 0        # zero flag
 N: int = 0        # negative flag (bit7)
 MEM: Dict[int, int] = {i: 0 for i in range(256)}  # Main Memory
-instruction_memory: List[Instruction] = []   # Program Memory
 pc: int = 0       # 8-bit Program Counter
 
 # Pipeline registers
@@ -104,11 +68,12 @@ def set_flags_from(value: int):
 # Pipeline Stage implementations (NO hazards/forwarding)
 
 #Instruction Fetch
-def fetch_instruction(instruction_memory: List[Instruction], pc_val: int):
+def fetch_instruction(memory: Dict[int, int], pc_val: int):
     """IF: fetch one instruction; fill IF/ID latch (instr, pc, valid)."""
-    if 0 <= pc_val < len(instruction_memory):
+    if 0 <= pc_val < 0xFF:
+        instruction = Instruction.binary_to_instruction(memory[pc_val])
         return {
-            "instr": instruction_memory[pc_val],  # instr[11:0] (object)
+            "instr": instruction,  # instr[11:0] (object)
             "pc": mask8(pc_val),                  # pc[7:0]
             "valid": True
         }
@@ -411,17 +376,16 @@ def forwarding(ID_EX_reg, EX_MEM_reg, MEM_WB_reg, acc_snapshot):
 
 # Simulation Loop
 
-def run(program, max_cycles=20, start_pc=0, initial_mem=None) -> List[Dict[str, Any]]:
-    global instruction_memory, pc, ACC, Z, N, MEM, pipeline_regs
-    instruction_memory = list(program)
+def run(initial_mem, max_cycles=20, start_pc=0) -> List[Dict[str, Any]]:
+    global MEM, pc, ACC, Z, N, MEM, pipeline_regs
     pc = start_pc & 0xFF
     ACC = 0; Z = 0; N = 0
 
-    # initialize memory with optional preloads
+    # initialize memory
     MEM = {i: 0 for i in range(256)}
     if initial_mem:
         for k, v in initial_mem.items():
-            MEM[k & 0xFF] = v & 0xFF
+            MEM[k & 0xFF] = v & 0xFFF
     pipeline_regs = {'IF_ID': None, 'ID_EX': None, 'EX_MEM': None, 'MEM_WB': None}
 
     trace: List[Dict[str, Any]] = []
@@ -474,7 +438,7 @@ def run(program, max_cycles=20, start_pc=0, initial_mem=None) -> List[Dict[str, 
         # ID
         pipeline_regs['ID_EX'] = decode_instruction(pipeline_regs['IF_ID'])
         # IF (uses current pc), then sequential increment 
-        pipeline_regs['IF_ID'] = fetch_instruction(instruction_memory, pc)
+        pipeline_regs['IF_ID'] = fetch_instruction(MEM, pc)
         pc = (pc + 1) & 0xFF
         
          
@@ -529,34 +493,34 @@ if __name__ == "__main__":
     """
     program = [
         #  0
-        Instruction('LOADI', 5),      # ACC <- M[M[5]] = M[10] = 50
+        Instruction('LOADI', 40),      # ACC <- M[M[5]] = M[10] = 50
         Instruction('NOP'),           # 1
         Instruction('NOP'),           # 2
 
-        Instruction('ADD', 10),       # 3  ACC <- ACC + M[10] = 50 + 50 = 100
+        Instruction('ADD', 41),       # 3  ACC <- ACC + M[10] = 50 + 50 = 100
         Instruction('NOP'),           # 4
         Instruction('NOP'),           # 5
 
-        Instruction('STOREI', 20),    # 6  M[M[20]] <- ACC  => M[30] = 100
+        Instruction('STOREI', 42),    # 6  M[M[20]] <- ACC  => M[30] = 100
         Instruction('NOP'),           # 7
         Instruction('NOP'),           # 8
 
-        Instruction('STORE', 40),     # 9  M[40] <- ACC  => 100
+        Instruction('STORE', 45),     # 9  M[40] <- ACC  => 100
         Instruction('NOP'),           # 10
 
-        Instruction('LOAD', 40),      # 11 ACC <- M[40] = 100
+        Instruction('LOAD', 45),      # 11 ACC <- M[40] = 100
         Instruction('NOP'),           # 12
         Instruction('NOP'),           # 13
 
-        Instruction('AND', 25),       # 14 ACC <- 100 & 25 = 0
+        Instruction('AND', 44),       # 14 ACC <- 100 & 25 = 0
         Instruction('NOP'),           # 15
         Instruction('NOP'),           # 16
 
-        Instruction('OR', 25),        # 17 ACC <- 0 | 25 = 25
+        Instruction('OR', 44),        # 17 ACC <- 0 | 25 = 25
         Instruction('NOP'),           # 18
         Instruction('NOP'),           # 19
 
-        Instruction('SUB', 25),       # 20 ACC <- 25 - 25 = 0  (Z=1, N=0)
+        Instruction('SUB', 44),       # 20 ACC <- 25 - 25 = 0  (Z=1, N=0)
         Instruction('NOP'),           # 21
         Instruction('NOP'),           # 22
 
@@ -574,23 +538,34 @@ if __name__ == "__main__":
         Instruction('HALT'),          # 31 would halt if we didn't jump
 
         # Jump target:
-        Instruction('LOAD', 30),      # 32 ACC <- M[30] = 100  (stored earlier by STOREI)
+        Instruction('LOAD', 43),      # 32 ACC <- M[30] = 100  (stored earlier by STOREI)
         Instruction('NOP'),           # 33 padding to let LOAD reach WB before HALT
         Instruction('HALT'),          # 34 final stop
     ]
 
-    initial_mem = {
-        5: 10,
-        10: 50,
-        20: 30,
-        30: 0,
-        25: 25,
-        40: 0,
+    preloaded_mem = {
+        40: 41,
+        41: 50,
+        42: 43,
+        43: 0,
+        44: 25,
+        45: 0,
         60: 100,
         61: 1,
     }
 
-    t = run(program, max_cycles=120, start_pc=0, initial_mem=initial_mem)
+    initial_mem = {}
+    for i, instr in enumerate(program):
+        initial_mem[i] = instr.instruction_to_binary()
+    for k, v in preloaded_mem.items():
+        initial_mem[k] = v & 0xFF
+    print("Initial Memory: ")
+    for loc in sorted(initial_mem.keys()):
+        val = initial_mem[loc]
+        Instruction_inst = Instruction.binary_to_instruction(val)
+        print(f"MEM[{loc:02}] = {Instruction_inst.opcode_to_string()} {Instruction_inst.operand}")
+
+    t = run(max_cycles=120, start_pc=0, initial_mem=initial_mem)
 
     # show early cycles
     for row in t[:14]:
@@ -600,12 +575,12 @@ if __name__ == "__main__":
     last = t[-1]
     print("\nFINAL STATE")
     print("ACC:", last["ACC"], "Z:", last["Z"], "N:", last["N"])
-    print(f"MEM[10]: {MEM[10]}, MEM[20]: {MEM[20]}, MEM[30]: {MEM[30]}, MEM[40]: {MEM[40]}, MEM[50]: {MEM.get(50,0)}")
+    print(f"MEM[41]: {MEM[41]}, MEM[42]: {MEM[42]}, MEM[43]: {MEM[43]}, MEM[44]: {MEM[44]}, MEM[45]: {MEM.get(45,0)}")
     print(f"Total cycles executed: {len(t)}")
 
     # Simple checks 
     assert last["ACC"] == 100 and last["Z"] == 0 and last["N"] == 0, "Final ACC/Z/N mismatch"
-    assert MEM[30] == 100, "MEM[30] should be 100 (written by STOREI)"
-    assert MEM[40] == 100, "MEM[40] should be 100 (written by STORE)"
+    assert MEM[43] == 100, "MEM[43] should be 100 (written by STOREI)"
+    assert MEM[45] == 100, "MEM[40] should be 100 (written by STORE)"
     assert MEM.get(50, 0) == 0, "MEM[50] should be 0 (fallthrough skipped by JN)"
     print(" All expected results match.")
