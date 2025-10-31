@@ -1,3 +1,14 @@
+# Utility Functions
+# Ensures any value in CPU stays within 8 bits
+def mask8(x: int) -> int:
+    return x & 0xFF
+
+def to_signed8(x: int) -> int:
+    """Convert an 8-bit unsigned integer to signed integer."""
+    if x & 0x80:
+        return x - 0x100
+    return x
+
 class Instruction:
     opcodes = {
         0x0: 'JMP',
@@ -21,10 +32,10 @@ class Instruction:
             # print(f"Converted opcode string {opcode} to int: {self.opcode}")
         else:
             self.opcode = opcode if operand is not None else 0
-        self.operand = operand if operand is not None else 0
+        self.operand = mask8(operand) if operand is not None else 0
 
     def __repr__(self):
-        return f"Instruction(opcode={self.opcode}, operand={self.operand})"
+        return f"Instruction(opcode={self.opcode}, operand={to_signed8(self.operand)})"
 
     def opcode_to_string(self):
         # lookup opcode name from value
@@ -43,7 +54,6 @@ class Instruction:
 
 def process_mem_file(file_path):
     memory = {}
-    
     with open(file_path, 'r') as f:
         for line in f:
             # Skip empty lines
