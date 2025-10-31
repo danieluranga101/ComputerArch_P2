@@ -30,12 +30,12 @@ Sections Overview:
    Demonstrates indirect and direct memory operations using LOADI, STOREI, ADD, AND, LOAD, HALT, JN
    instructions. Memory is preloaded to verify pointer-based behavior.'''
 
-
+import sys
 from typing import List, Dict, Any
-from process_mem import Instruction, mask8, to_signed8
+from process_mem import Instruction, mask8, to_signed8, process_mem_file, write_mem_file
 
+DEBUG = False
 def printg(msg: str):
-    DEBUG = True
     if DEBUG:
         print(msg)
 
@@ -348,6 +348,12 @@ class S12PipelineCPU:
         printg("\n")
 
     def simulate_non_pipelined_5cycle(self):
+        printg(f"{self.PC}")
+        # Save current pipeline registers for next cycle hazard detection and forwarding
+        self.prevIF_ID = self.IF_ID.copy()
+        self.prevID_EX = self.ID_EX.copy()
+        self.prevEX_MEM = self.EX_MEM.copy()
+        self.prevMEM_WB = self.MEM_WB.copy()
         self.fetch_instruction()
         self.decode_instruction()
         self.execute_instruction()
@@ -387,44 +393,58 @@ if __name__ == "__main__":
       MEM[60] = 100    (operand for SUB to force negative -> N=1)
       MEM[61] = 1      (operand used on the fallthrough path if JN not taken)
     """
-    program = [
-        #  0
-        Instruction('LOADI', 40),      # ACC <- M[M[40]] = M[41] = 50
-        Instruction('ADD', 41),       # 3  ACC <- ACC + M[41] = 50 + 50 = 100
-        Instruction('STOREI', 42),    # 6  M[M[42]] <- ACC  => M[43] = 100
-        Instruction('STORE', 45),     # 9  M[45] <- ACC  => 100
-        Instruction('LOAD', 45),      # 11 ACC <- M[45] = 100
-        Instruction('AND', 44),       # 14 ACC <- 100 & 25 = 0
-        Instruction('OR', 44),        # 17 ACC <- 0 | 25 = 25
-        Instruction('SUB', 44),       # 20 ACC <- 25 - 25 = 0  (Z=1, N=0)
-        Instruction('SUB', 60),       # 23 ACC <- 0 - 100 = 156 (0x9C), N=1
-        # SHRINK 25 to adjust for removed NOPs
-        Instruction('JN', 13),        # 26 if N=1 jump to index 25 (target below)
-        # Fallthrough path (should be skipped because N=1)
-        Instruction('ADD', 61),       # 29 would do ACC <- ACC + 1
-        Instruction('STORE', 50),     # 30 would store to M[50]
-        Instruction('HALT'),          # 31 would halt if we didn't jump
-        # Jump target:
-        Instruction('LOAD', 43),      # 32 ACC <- M[30] = 100  (stored earlier by STOREI)
-        Instruction('HALT'),          # 34 final stop
-    ]
+    # check for -v flag for verbose debugging prints
+    DEBUG = True if sys.argv.count('-v') > 0 else False
+    debug = False
+    # process file passed through command line
+    arg_mem_file = None
+    if len(sys.argv) > 1:
+        arg_mem_file = sys.argv[1]
+    if arg_mem_file:
+        initial_mem = process_mem_file(arg_mem_file)
+    else:
+        DEBUG = True
+        debug = True
+        program = [
+            #  0
+            Instruction('LOADI', 40),      # ACC <- M[M[40]] = M[41] = 50
+            Instruction('ADD', 41),       # 3  ACC <- ACC + M[41] = 50 + 50 = 100
+            Instruction('STOREI', 42),    # 6  M[M[42]] <- ACC  => M[43] = 100
+            Instruction('STORE', 45),     # 9  M[45] <- ACC  => 100
+            Instruction('LOAD', 45),      # 11 ACC <- M[45] = 100
+            Instruction('AND', 44),       # 14 ACC <- 100 & 25 = 0
+            Instruction('OR', 44),        # 17 ACC <- 0 | 25 = 25
+            Instruction('SUB', 44),       # 20 ACC <- 25 - 25 = 0  (Z=1, N=0)
+            Instruction('SUB', 60),       # 23 ACC <- 0 - 100 = 156 (0x9C), N=1
+            # SHRINK 25 to adjust for removed NOPs
+            Instruction('JN', 13),        # 26 if N=1 jump to index 25 (target below)
+            # Fallthrough path (should be skipped because N=1)
+            Instruction('ADD', 61),       # 29 would do ACC <- ACC + 1
+            Instruction('STORE', 50),     # 30 would store to M[50]
+            Instruction('HALT'),          # 31 would halt if we didn't jump
+            # Jump target:
+            Instruction('LOAD', 43),      # 32 ACC <- M[30] = 100  (stored earlier by STOREI)
+            Instruction('HALT'),          # 34 final stop
+        ]
 
-    preloaded_mem = {
-        40: 41,
-        41: 50,
-        42: 43,
-        43: 0,
-        44: 25,
-        45: 0,
-        60: 100,
-        61: 1,
-    }
+        preloaded_mem = {
+            40: 41,
+            41: 50,
+            42: 43,
+            43: 0,
+            44: 25,
+            45: 0,
+            60: 100,
+            61: 1,
+        }
 
-    initial_mem = {}
-    for i, instr in enumerate(program):
-        initial_mem[i] = instr.instruction_to_binary()
-    for k, v in preloaded_mem.items():
-        initial_mem[k] = v & 0xFF
+        initial_mem = {}
+        for i, instr in enumerate(program):
+            initial_mem[i] = instr.instruction_to_binary()
+        for k, v in preloaded_mem.items():
+            initial_mem[k] = v & 0xFF
+
+    # Initial architectural state
     print("Initial Memory: ")
     for loc in sorted(initial_mem.keys()):
         val = initial_mem[loc]
@@ -433,19 +453,30 @@ if __name__ == "__main__":
 
     myCPU = S12PipelineCPU(initial_mem)
     # set pipelined to false for benchmarking non-pipelined execution
-    total_cycles = myCPU.run(max_cycles=100, start_pc=0, pipelined=True)
+    # -p flag can be used to enable pipelined execution
+    pipelined = False if sys.argv.count('-n') > 0 else True
+    total_cycles = myCPU.run(max_cycles=20000, start_pc=0, pipelined=pipelined)
 
-    # Final architectural state
-    print("\nFINAL STATE")
-    print("ACC:", myCPU.ACC, "Z:", myCPU.Z, "N:", myCPU.N)
-    print(f"MEM[41]: {myCPU.MEM[41]}, MEM[42]: {myCPU.MEM[42]}, MEM[43]: {myCPU.MEM[43]}, MEM[44]: {myCPU.MEM[44]}, MEM[45]: {myCPU.MEM[45]}")
-    print(f"Total cycles executed: {total_cycles}")
+    if debug:
+        # Final architectural state
+        print("\nFINAL STATE")
+        print("ACC:", myCPU.ACC, "Z:", myCPU.Z, "N:", myCPU.N)
+        print(f"MEM[41]: {myCPU.MEM[41]}, MEM[42]: {myCPU.MEM[42]}, MEM[43]: {myCPU.MEM[43]}, MEM[44]: {myCPU.MEM[44]}, MEM[45]: {myCPU.MEM[45]}")
+        print(f"Total cycles executed: {total_cycles}")
 
-    # Simple checks 
-    assert myCPU.ACC == 100 and myCPU.Z == 0 and myCPU.N == 0, "Final ACC/Z/N mismatch"
-    assert myCPU.MEM[43] == 100, "MEM[43] should be 100 (written by STOREI)"
-    assert myCPU.MEM[45] == 100, "MEM[40] should be 100 (written by STORE)"
-    assert myCPU.MEM.get(50, 0) == 0, "MEM[50] should be 0 (fallthrough skipped by JN)"
-    print(" All expected results match.")
+        # Simple checks 
+        assert myCPU.ACC == 100 and myCPU.Z == 0 and myCPU.N == 0, "Final ACC/Z/N mismatch"
+        assert myCPU.MEM[43] == 100, "MEM[43] should be 100 (written by STOREI)"
+        assert myCPU.MEM[45] == 100, "MEM[40] should be 100 (written by STORE)"
+        assert myCPU.MEM.get(50, 0) == 0, "MEM[50] should be 0 (fallthrough skipped by JN)"
+        print(" All expected results match.")
 
+    # write memory to -o file if specified
+    output_mem_file = None
+    if '-o' in sys.argv:
+        o_index = sys.argv.index('-o')
+        if o_index + 1 < len(sys.argv):
+            output_mem_file = sys.argv[o_index + 1]
+    if output_mem_file:
+        write_mem_file(output_mem_file, myCPU.MEM)
     myCPU.display_performance_counters()

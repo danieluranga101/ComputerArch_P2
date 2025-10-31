@@ -52,14 +52,18 @@ The simulation is based on a classic 5-stage RISC pipeline:
 
 ## How to Run
 
-The script can be executed directly from the command line:
+The script can be executed directly from the command line with the following options:
+    First required argument is always input file
+    -n : if present then it runs the non pipelined version of ISA (used for benchmark comparison)
+    -o <output.mem> : if present then writes final memory state to output.mem
+    -v : enables verbose debugging prints
 
 ```bash
-python s12_pipeline.py
+python .\s12_pipeline.py .\Sort_genSize_bubbleTime_v2.mem -o bubble_pipe_result.mem
 ```
 
 The output will show a cycle-by-cycle trace of the pipeline registers and the final state of the CPU and memory after the test program has run.
 
 ## Demo Program
-
+If no file is given for input then it will run a small demo program
 The script includes a self-contained test program under the `if __name__ == "__main__":` block. This program is designed to exercise various instructions and verify the correct behavior of the pipeline, including direct and indirect memory operations, arithmetic, and conditional branching.

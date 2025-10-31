@@ -84,3 +84,10 @@ def process_mem_file(file_path):
                 print(f"Skipping invalid instruction at location {mem_loc}")
                 
     return memory
+
+def write_mem_file(file_path, memory):
+    with open(file_path, 'w') as f:
+        for mem_loc in sorted(memory.keys()):
+            instruction_int = memory[mem_loc]
+            instruction_bits = format(instruction_int, '012b')  # 12-bit binary
+            f.write(f"{mem_loc:02X} {instruction_bits}\n")
