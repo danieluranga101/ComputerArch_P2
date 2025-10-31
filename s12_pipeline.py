@@ -35,8 +35,7 @@ from typing import List, Dict, Any
 from process_mem import Instruction, mask8, to_signed8
 
 def printg(msg: str):
-
-    DEBUG = False
+    DEBUG = True
     if DEBUG:
         print(msg)
 
