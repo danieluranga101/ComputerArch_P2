@@ -34,6 +34,12 @@ Sections Overview:
 from typing import List, Dict, Any
 from process_mem import Instruction, mask8, to_signed8
 
+def printg(msg: str):
+
+    DEBUG = False
+    if DEBUG:
+        print(msg)
+
 # Processor Architecture State initilization (Registers, Flags, and Memory)
 class S12PipelineCPU:
     def __init__(self, mem):
@@ -51,6 +57,12 @@ class S12PipelineCPU:
         self.ID_EX = {}
         self.EX_MEM = {}
         self.MEM_WB = {}
+        # Snapshots of previous cycle pipeline registers for hazard detection
+        # and true single cycle simulation
+        self.prevIF_ID = {}
+        self.prevID_EX = {}
+        self.prevEX_MEM = {}
+        self.prevMEM_WB = {}
         self.perf_counters = {
             "cycles": 0,
             "instructions": 0,
@@ -73,7 +85,6 @@ class S12PipelineCPU:
                 "JN": 0,
                 "JZ": 0,
                 "HALT": 0,
-                "NOP": 0
             }
         }
     
@@ -91,37 +102,66 @@ class S12PipelineCPU:
             print(f"  {instr}: {count}")
 
     def get_forwarded_acc(self):
+        """Get ACC value with forwarding from EX_MEM or MEM_WB if available"""
         acc_value = self.ACC
         # Check EX_MEM for ALU result
         option = -1 # no forwarding
-        if self.EX_MEM.get("valid", False) and self.EX_MEM.get("opcode") in (
+        if self.prevEX_MEM.get("valid", False) and self.prevEX_MEM.get("opcode") in (
             Instruction.opcode_to_int("ADD"), Instruction.opcode_to_int("SUB"),
             Instruction.opcode_to_int("AND"), Instruction.opcode_to_int("OR")):
-            acc_value = self.EX_MEM.get("alu_out", acc_value)
+            acc_value = self.prevEX_MEM.get("alu_out", acc_value)
             self.perf_counters['forwards']['EX_MEM'] += 1
             option = 0
         
         # Check MEM_WB for ALU result last because it takes priority
-        if self.MEM_WB.get("valid", False) and self.MEM_WB.get("opcode") in (
+        if self.prevMEM_WB.get("valid", False) and self.prevMEM_WB.get("opcode") in (
             Instruction.opcode_to_int("LOAD"), Instruction.opcode_to_int("LOADI")):
-            acc_value = self.MEM_WB.get("data_mem", acc_value)
+            acc_value = self.prevMEM_WB.get("data_mem", acc_value)
             self.perf_counters['forwards']['MEM_WB'] += 1
             option = 1
         if option == 0:
-            print(f"Forwarded ACC from EX_MEM used. val: {acc_value}")
+            printg(f"Forwarded ACC from EX_MEM used. val: {acc_value}")
         elif option == 1:
-            print(f"Forwarded ACC from MEM_WB used. val: {acc_value}")
+            printg(f"Forwarded ACC from MEM_WB used. val: {acc_value}")
         return acc_value
+    
+    def detect_hazard(self):
+        """If current execution stage is LOAD and next exectute stage is ALU op, stall"""
+        if not (self.prevID_EX.get("valid", False) and self.prevIF_ID.get("valid", False)):
+            return False
+        execute_op = Instruction(self.prevID_EX.get("opcode", None), 0)
+        printg(f"Detecting hazards with EX opcode: {execute_op.opcode_to_string()}")
+        if execute_op.opcode in (Instruction.opcode_to_int("LOAD"), Instruction.opcode_to_int("LOADI")):
+            decode_opcode = Instruction.binary_to_instruction(self.prevIF_ID.get("instr", 0))
+            printg(f"Checking hazard with ID opcode: {decode_opcode.opcode_to_string()}")
+            if decode_opcode.opcode in (Instruction.opcode_to_int("ADD"),
+                                        Instruction.opcode_to_int("SUB"),
+                                        Instruction.opcode_to_int("AND"),
+                                        Instruction.opcode_to_int("OR"),
+                                        Instruction.opcode_to_int("STORE"),
+                                        Instruction.opcode_to_int("STOREI")):
+                printg(f"Hazard detected between ID_EX operand {execute_op.opcode} and IF_ID operand {decode_opcode.opcode_to_string()}")
+                return True
+        return False
+    
+    def flush_for_control_hazard(self, halt=False):
+        """Flush instructions in IF_ID and ID_EX due to control hazard"""
+        printg("Flushing pipeline due to control hazard")
+        self.IF_ID = {"valid": False}
+        self.ID_EX = {"valid": False}
+        if not halt:
+            # only count flush if not halting
+            self.perf_counters['flushes'] += 1
 
     def fetch_instruction(self):
-        """IF: fetch instruction from memory into IF_ID latch"""
+        """IF: fetch instruction from memory into IF_ID"""
         if self.HALT:
-            self.IF_ID = {"instr": None, "PC": self.PC, "valid": False}
+            self.IF_ID = {"valid": False}
             return
         
         if 0 <= self.PC < 0xFF:
             instruction = self.MEM[self.PC]
-            print(f"IF: Fetched instruction {instruction:012b} from MEM[{self.PC}]")
+            printg(f"IF: Fetched instruction {instruction:012b} from MEM[{self.PC}]")
             self.IF_ID = {
                 "instr": instruction,  # instr[11:0] (object)
                 "PC": self.PC,  # pc[7:0]
@@ -132,17 +172,17 @@ class S12PipelineCPU:
     def decode_instruction(self):
         """ID: decode instruction, extract operands"""
         if self.HALT:
-            self.ID_EX = {"instr": None, "PC": None, "valid": False}
+            self.ID_EX = {"valid": False}
             return
         if self.IF_ID is None or not self.IF_ID.get("valid", False) or self.IF_ID["instr"] is None:
-            self.ID_EX = {"instr": None, "PC": None, "valid": False}
+            self.ID_EX = {"valid": False}
             return
         
         instruction = Instruction.binary_to_instruction(self.IF_ID["instr"])
         instruction_str = instruction.opcode_to_string().upper()
-        print(f"ID: Opcode: {instruction_str}, Operand: {instruction.operand}")
+        printg(f"ID: Opcode: {instruction_str}, Operand: {instruction.operand}")
         self.ID_EX = {"opcode": instruction.opcode, "operand": instruction.operand,
-                      "PC": self.IF_ID.get("PC", None), "valid": True}
+                      "valid": True}
 
     def alu(self, op, b):
         """Simple ALU operations"""
@@ -159,7 +199,7 @@ class S12PipelineCPU:
         else:
             result =  to_signed8(b)  # passthrough operand
         op_obj = Instruction(op, 0)
-        print(f"ALU Operation: {op_obj.opcode_to_string()}, A: {a}, B: {b} => Result: {to_signed8(mask8(result))} binary: {mask8(result):08b}")
+        printg(f"ALU Operation: {op_obj.opcode_to_string()}, A: {a}, B: {b} => Result: {to_signed8(mask8(result))} binary: {mask8(result):08b}")
 
         return mask8(result)
 
@@ -167,60 +207,61 @@ class S12PipelineCPU:
     def execute_instruction(self):
         """EX: do ALU ops or branch resuoltuion"""
         if self.HALT:
-            self.EX_MEM = {"instr": None, "PC": None, "valid": False}
+            self.EX_MEM = {"valid": False}
             return
         if self.ID_EX is None or not self.ID_EX.get("valid", False):
-            self.EX_MEM = {"alu_out": None, "opcode": None, "operand": None, "PC": None, "valid": False}
+            self.EX_MEM = {"valid": False}
             return
         
         instruction = Instruction(self.ID_EX["opcode"], self.ID_EX["operand"])
         instruction_str = instruction.opcode_to_string().upper()
-        print(f"EX: Opcode: {instruction_str}, Operand: {instruction.operand}")
+        printg(f"EX: Opcode: {instruction_str}, Operand: {instruction.operand}")
 
         if instruction.opcode in (Instruction.opcode_to_int("ADD"), Instruction.opcode_to_int("SUB"),
                                   Instruction.opcode_to_int("AND"), Instruction.opcode_to_int("OR")):
             # ALU operation with MEM[operand]
             alu_result = self.alu(instruction.opcode, self.MEM.get(instruction.operand, 0))
             self.EX_MEM = {"alu_out": alu_result, "opcode": instruction.opcode,
-                           "operand": instruction.operand,
-                           "PC": self.ID_EX.get("PC", None), "valid": True}
+                           "operand": instruction.operand, "valid": True}
             self.perf_counters['instruction_mix'][instruction_str] += 1
         elif instruction.opcode is Instruction.opcode_to_int("JMP"):
             # Unconditional jump
             self.PC = instruction.operand & 0xFF
-            self.EX_MEM = {"opcode": instruction.opcode, "operand": instruction.operand,
-                           "PC": self.ID_EX.get("PC", None), "valid": True}
+            self.flush_for_control_hazard()
+            self.EX_MEM = {"opcode": instruction.opcode, "operand": instruction.operand, "valid": True}
             self.perf_counters['instruction_mix']['JMP'] += 1
         elif instruction.opcode is Instruction.opcode_to_int("JN"):
             # Jump if negative
-            if self.N == 1:
+            forwarded_acc = to_signed8(self.get_forwarded_acc())
+            printg(f"JN: Checking N flag with forwarded ACC value: {forwarded_acc}")
+            if forwarded_acc < 0:
                 self.PC = instruction.operand & 0xFF
-            self.EX_MEM = {"opcode": instruction.opcode, "operand": instruction.operand,
-                           "PC": self.ID_EX.get("PC", None), "valid": True}
+                self.flush_for_control_hazard()
+            self.EX_MEM = {"opcode": instruction.opcode, "operand": instruction.operand, "valid": True}
             self.perf_counters['instruction_mix']['JN'] += 1
         elif instruction.opcode is Instruction.opcode_to_int("JZ"):
             # Jump if zero
-            if self.Z == 1:
+            forwarded_acc = to_signed8(self.get_forwarded_acc())
+            if forwarded_acc == 0:
                 self.PC = instruction.operand & 0xFF
-            self.EX_MEM = {"opcode": instruction.opcode, "operand": instruction.operand,
-                       "PC": self.ID_EX.get("PC", None), "valid": True}
+                self.flush_for_control_hazard()
+            self.EX_MEM = {"opcode": instruction.opcode, "operand": instruction.operand, "valid": True}
             self.perf_counters['instruction_mix']['JZ'] += 1
         elif instruction.opcode is Instruction.opcode_to_int("HALT"):
             self.HALT = True
-            self.EX_MEM = {"opcode": instruction.opcode, "operand": instruction.operand,
-                           "PC": self.ID_EX.get("PC", None), "valid": True}
+            self.EX_MEM = {"opcode": instruction.opcode, "operand": instruction.operand, "valid": True}
+            self.flush_for_control_hazard(True) # don't count halt flush for performance coutners
             self.perf_counters['instruction_mix']['HALT'] += 1
         else:
             # Other instructions (LOAD, STORE, LOADI, STOREI) pass through
-            self.EX_MEM = {"opcode": instruction.opcode, "operand": instruction.operand,
-                           "PC": self.ID_EX.get("PC", None), "valid": True}
+            self.EX_MEM = {"opcode": instruction.opcode, "operand": instruction.operand, "valid": True}
             self.perf_counters['instruction_mix'][instruction_str] += 1
         self.perf_counters['instructions'] += 1
     
     def memory_access(self):
         """MEM: memory access"""
         if self.EX_MEM is None or not self.EX_MEM.get("valid", False):
-            self.MEM_WB = {"instr": None, "PC": None, "valid": False}
+            self.MEM_WB = {"valid": False}
             return
         # data_mem is the value read from memory (for LOAD/LOADI)
         # alu_out is the ALU result (for ALU ops)
@@ -228,40 +269,35 @@ class S12PipelineCPU:
         if self.EX_MEM.get("opcode", None) is Instruction.opcode_to_int("LOAD"):
             # Direct load
             data = self.MEM.get(self.EX_MEM["operand"], 0)
-            print(f"MEM: LOAD: Loaded value {data} from MEM[{self.EX_MEM['operand']}]")
+            printg(f"MEM: LOAD: Loaded value {data} from MEM[{self.EX_MEM['operand']}]")
             self.MEM_WB = {"data_mem": data, "opcode": self.EX_MEM["opcode"],
-                           "operand": self.EX_MEM["operand"],
-                           "PC": self.EX_MEM.get("PC", None), "valid": True}
+                           "operand": self.EX_MEM["operand"], "valid": True}
         elif self.EX_MEM.get("opcode", None) is Instruction.opcode_to_int("STORE"):
             # Direct store
             self.MEM[self.EX_MEM["operand"]] = self.ACC & 0xFF
-            print(f"MEM: STORE: Stored ACC value {self.ACC & 0xFF} to MEM[{self.EX_MEM['operand']}]")
+            printg(f"MEM: STORE: Stored ACC value {self.ACC & 0xFF} to MEM[{self.EX_MEM['operand']}]")
             self.MEM_WB = {"opcode": self.EX_MEM["opcode"],
-                           "operand": self.EX_MEM["operand"],
-                           "PC": self.EX_MEM.get("PC", None), "valid": True}
+                           "operand": self.EX_MEM["operand"], "valid": True}
         elif self.EX_MEM.get("opcode", None) is Instruction.opcode_to_int("LOADI"):
             # Indirect load
             ptr = self.MEM.get(self.EX_MEM["operand"], 0) & 0xFF
             data = self.MEM.get(ptr, 0)
-            print(f"MEM: LOADI: Loaded value {data} from MEM[MEM[{self.EX_MEM['operand']}]] = MEM[{ptr}]")
+            printg(f"MEM: LOADI: Loaded value {data} from MEM[MEM[{self.EX_MEM['operand']}]] = MEM[{ptr}]")
             self.MEM_WB = {"data_mem": data, "opcode": self.EX_MEM["opcode"],
-                           "operand": self.EX_MEM["operand"],
-                           "PC": self.EX_MEM.get("PC", None), "valid": True}
+                           "operand": self.EX_MEM["operand"], "valid": True}
         elif self.EX_MEM.get("opcode", None) is Instruction.opcode_to_int("STOREI"):
             # Indirect store
             ptr = self.MEM.get(self.EX_MEM["operand"], 0) & 0xFF
             self.MEM[ptr] = self.ACC & 0xFF
-            print(f"MEM: STOREI: Stored ACC value {self.ACC & 0xFF} to MEM[MEM[{self.EX_MEM['operand']}]] = MEM[{ptr}]")
+            printg(f"MEM: STOREI: Stored ACC value {self.ACC & 0xFF} to MEM[MEM[{self.EX_MEM['operand']}]] = MEM[{ptr}]")
             self.MEM_WB = {"opcode": self.EX_MEM["opcode"],
-                           "operand": self.EX_MEM["operand"],
-                           "PC": self.EX_MEM.get("PC", None), "valid": True}
+                           "operand": self.EX_MEM["operand"], "valid": True}
         else:
             # ALU ops and others pass through
-            print(f"MEM: passthrough through ALU result {self.EX_MEM.get('alu_out', None)}")
+            printg(f"MEM: passthrough through ALU result {self.EX_MEM.get('alu_out', None)}")
             self.MEM_WB = {"alu_out": self.EX_MEM.get("alu_out", None), # if not present then its a jump/halt
                            "opcode": self.EX_MEM["opcode"],
-                           "operand": self.EX_MEM["operand"],
-                           "PC": self.EX_MEM.get("PC", None), "valid": True}
+                           "operand": self.EX_MEM["operand"], "valid": True}
                       
     def write_back(self):
         """WB: write back to ACC"""
@@ -271,29 +307,45 @@ class S12PipelineCPU:
         # write back to ACC based on opcode, use data from Load or ALU result
         if self.MEM_WB.get("opcode", None) is Instruction.opcode_to_int("LOAD"):
             self.ACC = to_signed8(mask8(self.MEM_WB["data_mem"]))
-            print(f"WB: LOAD: ACC updated to {self.ACC}")
+            printg(f"WB: LOAD: ACC updated to {self.ACC}")
         elif self.MEM_WB.get("opcode", None) is Instruction.opcode_to_int("LOADI"):
             self.ACC = to_signed8(mask8(self.MEM_WB["data_mem"]))
-            print(f"WB: LOADI: ACC updated to {self.ACC}")
+            printg(f"WB: LOADI: ACC updated to {self.ACC}")
         elif self.MEM_WB.get("opcode", None) in (Instruction.opcode_to_int("ADD"),
                                                  Instruction.opcode_to_int("SUB"),
                                                  Instruction.opcode_to_int("AND"),
                                                  Instruction.opcode_to_int("OR")):
-            print(f"WB: ALU op: ACC updated to {self.MEM_WB['alu_out']}")
+            printg(f"WB: ALU op: ACC updated to {self.MEM_WB['alu_out']}")
             self.ACC = to_signed8(mask8(self.MEM_WB["alu_out"]))
         
         # Update flags
         self.Z = 1 if self.ACC == 0 else 0
         self.N = 1 if self.ACC < 0 else 0
-        print(f"WB: Flags updated: Z={self.Z}, N={self.N}")
+        printg(f"WB: Flags updated: Z={self.Z}, N={self.N}")
 
     def simulate_pipelined_cycle(self):
+        printg(f"{self.PC}")
+        # Save current pipeline registers for next cycle hazard detection and forwarding
+        self.prevIF_ID = self.IF_ID.copy()
+        self.prevID_EX = self.ID_EX.copy()
+        self.prevEX_MEM = self.EX_MEM.copy()
+        self.prevMEM_WB = self.MEM_WB.copy()
+
         self.write_back()
         self.memory_access()
         self.execute_instruction()
+
+        if self.detect_hazard():
+            self.perf_counters['stalls'] += 1
+            # Insert a stall by keeping ID_EX the same
+            # rerun IF and ID stages
+            self.ID_EX = {"valid": False}
+            printg("\n")
+            return
+
         self.decode_instruction()
         self.fetch_instruction()
-        print("\n")
+        printg("\n")
 
     def simulate_non_pipelined_5cycle(self):
         self.fetch_instruction()
@@ -301,7 +353,7 @@ class S12PipelineCPU:
         self.execute_instruction()
         self.memory_access()
         self.write_back()
-        print("\n")
+        printg("\n")
 
 
     def run(self, max_cycles=100, start_pc=0, pipelined=False):
