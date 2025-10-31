@@ -125,7 +125,9 @@ class S12PipelineCPU:
         return acc_value
     
     def detect_hazard(self):
-        """If current execution stage is LOAD and next exectute stage is ALU op, stall"""
+        """If current execution stage is LOAD and next exectute stage is ALU op,
+           or if current executions stage is STORE and next execute stage is ALU op, stall"""
+        # Load use hazard
         if not (self.prevID_EX.get("valid", False) and self.prevIF_ID.get("valid", False)):
             return False
         execute_op = Instruction(self.prevID_EX.get("opcode", None), 0)
@@ -140,6 +142,22 @@ class S12PipelineCPU:
                                         Instruction.opcode_to_int("JN"),
                                         Instruction.opcode_to_int("JZ"),
                                         Instruction.opcode_to_int("JMP")):
+                printg(f"Hazard detected between ID_EX operand {execute_op.opcode} and IF_ID operand {decode_opcode.opcode_to_string()}")
+                return True
+        # Read after write hazard
+        if execute_op.opcode in (Instruction.opcode_to_int("STORE"), Instruction.opcode_to_int("STOREI")):
+            decode_opcode = Instruction.binary_to_instruction(self.prevIF_ID.get("instr", 0))
+            printg(f"Checking hazard with ID opcode: {decode_opcode.opcode_to_string()}")
+            if decode_opcode.opcode in (Instruction.opcode_to_int("ADD"),
+                                        Instruction.opcode_to_int("SUB"),
+                                        Instruction.opcode_to_int("AND"),
+                                        Instruction.opcode_to_int("OR"),
+                                        Instruction.opcode_to_int("JN"),
+                                        Instruction.opcode_to_int("JZ"),
+                                        Instruction.opcode_to_int("JMP")):
+                # For store we can check if the opcodes are the same. We only have a hazard if they are different
+                if execute_op.opcode == Instruction.opcode_to_int("STORE") and decode_opcode.operand != execute_op.operand:
+                    return False
                 printg(f"Hazard detected between ID_EX operand {execute_op.opcode} and IF_ID operand {decode_opcode.opcode_to_string()}")
                 return True
         return False
@@ -164,7 +182,6 @@ class S12PipelineCPU:
             printg(f"IF: Fetched instruction {instruction:012b} from MEM[{self.PC}]")
             self.IF_ID = {
                 "instr": instruction,  # instr[11:0] (object)
-                "PC": self.PC,  # pc[7:0]
                 "valid": True
             }
             self.PC+=1
