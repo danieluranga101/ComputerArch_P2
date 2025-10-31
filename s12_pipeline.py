@@ -137,8 +137,9 @@ class S12PipelineCPU:
                                         Instruction.opcode_to_int("SUB"),
                                         Instruction.opcode_to_int("AND"),
                                         Instruction.opcode_to_int("OR"),
-                                        Instruction.opcode_to_int("STORE"),
-                                        Instruction.opcode_to_int("STOREI")):
+                                        Instruction.opcode_to_int("JN"),
+                                        Instruction.opcode_to_int("JZ"),
+                                        Instruction.opcode_to_int("JMP")):
                 printg(f"Hazard detected between ID_EX operand {execute_op.opcode} and IF_ID operand {decode_opcode.opcode_to_string()}")
                 return True
         return False
