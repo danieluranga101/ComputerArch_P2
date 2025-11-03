@@ -415,7 +415,7 @@ if __name__ == "__main__":
     debug = False
     # process file passed through command line
     arg_mem_file = None
-    if len(sys.argv) > 1:
+    if len(sys.argv) > 1 and "mem" in sys.argv[1]:
         arg_mem_file = sys.argv[1]
     if arg_mem_file:
         initial_mem = process_mem_file(arg_mem_file)
