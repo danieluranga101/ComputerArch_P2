@@ -86,6 +86,15 @@ class S12PipelineCPU:
                 "HALT": 0,
             }
         }
+        self.branch_prediction = {
+            "method": "static_not_taken",
+            "last_PC": 0,
+            "jumped": False,
+            "taken": 0,
+            "not_taken": 0,
+            "correct": 0,
+            "incorr": 0
+        }
     
     def display_performance_counters(self):
         print("Performance Counters:")
@@ -184,7 +193,23 @@ class S12PipelineCPU:
                 "instr": instruction,  # instr[11:0] (object)
                 "valid": True
             }
-            self.PC+=1
+            instruction_obj = Instruction.binary_to_instruction(instruction)
+            if instruction_obj.opcode in (Instruction.opcode_to_int("JMP"),
+                                          Instruction.opcode_to_int("JN"),
+                                          Instruction.opcode_to_int("JZ")):
+                printg(f"IF: Branch instruction detected: {instruction_obj.opcode_to_string()}")
+                self.branch_prediction["last_PC"] = self.PC
+                match self.branch_prediction["method"]:
+                    case "static_not_taken":
+                        self.PC+=1
+                    case "static_taken":
+                        self.PC = instruction_obj.operand & 0xFF
+                        self.branch_prediction["jumped"] = True
+                    case _:
+                        print("Unknown branch prediction method")
+                        pass
+            else:
+                self.PC+=1
 
     def decode_instruction(self):
         """ID: decode instruction, extract operands"""
@@ -243,8 +268,12 @@ class S12PipelineCPU:
             self.perf_counters['instruction_mix'][instruction_str] += 1
         elif instruction.opcode is Instruction.opcode_to_int("JMP"):
             # Unconditional jump
-            self.PC = instruction.operand & 0xFF
-            self.flush_for_control_hazard()
+            if (self.branch_prediction["jumped"]):
+                self.branch_prediction["correct"] += 1
+            else:
+                self.branch_prediction["incorr"] += 1
+                self.PC = instruction.operand & 0xFF
+                self.flush_for_control_hazard()
             self.EX_MEM = {"opcode": instruction.opcode, "operand": instruction.operand, "valid": True}
             self.perf_counters['instruction_mix']['JMP'] += 1
         elif instruction.opcode is Instruction.opcode_to_int("JN"):
@@ -252,16 +281,38 @@ class S12PipelineCPU:
             forwarded_acc = to_signed8(self.get_forwarded_acc())
             printg(f"JN: Checking N flag with forwarded ACC value: {forwarded_acc}")
             if forwarded_acc < 0:
-                self.PC = instruction.operand & 0xFF
-                self.flush_for_control_hazard()
+                if (self.branch_prediction["jumped"]):
+                    self.branch_prediction["correct"] += 1
+                else:
+                    self.branch_prediction["incorr"] += 1
+                    self.PC = instruction.operand & 0xFF
+                    self.flush_for_control_hazard()
+            else:
+                if (self.branch_prediction["jumped"]):
+                    self.branch_prediction["incorr"] += 1
+                    self.PC = self.branch_prediction.get("last_PC", self.PC) + 1
+                    self.flush_for_control_hazard()
+                else:
+                    self.branch_prediction["correct"] += 1
             self.EX_MEM = {"opcode": instruction.opcode, "operand": instruction.operand, "valid": True}
             self.perf_counters['instruction_mix']['JN'] += 1
         elif instruction.opcode is Instruction.opcode_to_int("JZ"):
             # Jump if zero
             forwarded_acc = to_signed8(self.get_forwarded_acc())
             if forwarded_acc == 0:
-                self.PC = instruction.operand & 0xFF
-                self.flush_for_control_hazard()
+                if (self.branch_prediction["jumped"]):
+                    self.branch_prediction["correct"] += 1
+                else:
+                    self.branch_prediction["incorr"] += 1
+                    self.PC = instruction.operand & 0xFF
+                    self.flush_for_control_hazard()
+            else:
+                if (self.branch_prediction["jumped"]):
+                    self.branch_prediction["incorr"] += 1
+                    self.PC = self.branch_prediction.get("last_PC", self.PC) + 1
+                    self.flush_for_control_hazard()
+                else:
+                    self.branch_prediction["correct"] += 1
             self.EX_MEM = {"opcode": instruction.opcode, "operand": instruction.operand, "valid": True}
             self.perf_counters['instruction_mix']['JZ'] += 1
         elif instruction.opcode is Instruction.opcode_to_int("HALT"):
