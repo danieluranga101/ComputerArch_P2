@@ -62,6 +62,18 @@ The script can be executed directly from the command line with the following opt
 python .\s12_pipeline.py .\Sort_genSize_bubbleTime_v2.mem -o bubble_pipe_result.mem
 ```
 
+## Branch Prediction
+TODO:
+1. Static branch prediction:
+    always take
+    never take
+    take forward
+    take backwards
+
+2. Dynamic branch prediction
+    counter
+    last taken
+
 The output will show a cycle-by-cycle trace of the pipeline registers and the final state of the CPU and memory after the test program has run.
 
 ## Demo Program
