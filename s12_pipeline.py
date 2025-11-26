@@ -87,14 +87,21 @@ class S12PipelineCPU:
             }
         }
         self.branch_prediction = {
-            "method": "static_not_taken",
+            "method": "none",       # default prediction method
             "last_PC": 0,
             "jumped": False,
             "taken": 0,
             "not_taken": 0,
             "correct": 0,
-            "incorr": 0
+            "incorr": 0,
+
+            # Confusion Matrix
+            "TP": 0,   # predicted taken, actual taken
+            "FP": 0,   # predicted taken, actual not taken
+            "FN": 0,   # predicted not taken, actual taken
+            "TN": 0    # predicted not taken, actual not taken
         }
+
     
     def display_performance_counters(self):
         print("Performance Counters:")
@@ -108,6 +115,19 @@ class S12PipelineCPU:
         print("Instruction Mix:")
         for instr, count in self.perf_counters['instruction_mix'].items():
             print(f"  {instr}: {count}")
+
+    def display_branch_prediction_metrics(self):
+        print("Branch Prediction Metrics:")
+        print(f"  Method: {self.branch_prediction['method']}")
+        print(f"  Branches Taken: {self.branch_prediction['taken']}")
+        print(f"  Branches Not Taken: {self.branch_prediction['not_taken']}")
+        print(f"  Correct Predictions: {self.branch_prediction['correct']}")
+        print(f"  Incorrect Predictions: {self.branch_prediction['incorr']}")
+        print(f"  Confusion Matrix:")
+        print(f"                 Actual Taken | Actual Not Taken")
+        print(f"  Pred Taken      {self.branch_prediction['TP']:6}        {self.branch_prediction['FP']:6}")
+        print(f"  Pred Not Taken  {self.branch_prediction['FN']:6}        {self.branch_prediction['TN']:6}")
+
 
     def get_forwarded_acc(self):
         """Get ACC value with forwarding from EX_MEM or MEM_WB if available"""
@@ -205,6 +225,8 @@ class S12PipelineCPU:
                     case "static_taken":
                         self.PC = instruction_obj.operand & 0xFF
                         self.branch_prediction["jumped"] = True
+                    case "none":
+                        self.PC+=1
                     case _:
                         print("Unknown branch prediction method")
                         pass
@@ -268,12 +290,19 @@ class S12PipelineCPU:
             self.perf_counters['instruction_mix'][instruction_str] += 1
         elif instruction.opcode is Instruction.opcode_to_int("JMP"):
             # Unconditional jump
-            if (self.branch_prediction["jumped"]):
-                self.branch_prediction["correct"] += 1
-            else:
-                self.branch_prediction["incorr"] += 1
+            if(self.branch_prediction["method"] == "none"):
                 self.PC = instruction.operand & 0xFF
                 self.flush_for_control_hazard()
+            else:
+                if (self.branch_prediction["jumped"]):
+                    self.branch_prediction["correct"] += 1
+                    self.branch_prediction["TP"] += 1
+                else:
+                    self.branch_prediction["incorr"] += 1
+                    self.branch_prediction["FN"] += 1
+                    self.PC = instruction.operand & 0xFF
+                    self.flush_for_control_hazard()
+            self.branch_prediction["taken"] += 1
             self.EX_MEM = {"opcode": instruction.opcode, "operand": instruction.operand, "valid": True}
             self.perf_counters['instruction_mix']['JMP'] += 1
         elif instruction.opcode is Instruction.opcode_to_int("JN"):
@@ -281,38 +310,58 @@ class S12PipelineCPU:
             forwarded_acc = to_signed8(self.get_forwarded_acc())
             printg(f"JN: Checking N flag with forwarded ACC value: {forwarded_acc}")
             if forwarded_acc < 0:
-                if (self.branch_prediction["jumped"]):
-                    self.branch_prediction["correct"] += 1
+                if(self.branch_prediction["method"] == "none"):
+                        self.PC = instruction.operand & 0xFF
+                        self.flush_for_control_hazard()
                 else:
-                    self.branch_prediction["incorr"] += 1
-                    self.PC = instruction.operand & 0xFF
-                    self.flush_for_control_hazard()
+                    if (self.branch_prediction["jumped"]):
+                        self.branch_prediction["correct"] += 1
+                        self.branch_prediction["TP"] += 1
+                    else:
+                        self.branch_prediction["incorr"] += 1
+                        self.branch_prediction["FN"] += 1
+                        self.PC = instruction.operand & 0xFF
+                        self.flush_for_control_hazard()
+                self.branch_prediction["taken"] += 1
             else:
                 if (self.branch_prediction["jumped"]):
                     self.branch_prediction["incorr"] += 1
+                    self.branch_prediction["FP"] += 1
                     self.PC = self.branch_prediction.get("last_PC", self.PC) + 1
                     self.flush_for_control_hazard()
                 else:
                     self.branch_prediction["correct"] += 1
+                    self.branch_prediction["TN"] += 1
+                self.branch_prediction["not_taken"] += 1
             self.EX_MEM = {"opcode": instruction.opcode, "operand": instruction.operand, "valid": True}
             self.perf_counters['instruction_mix']['JN'] += 1
         elif instruction.opcode is Instruction.opcode_to_int("JZ"):
             # Jump if zero
             forwarded_acc = to_signed8(self.get_forwarded_acc())
             if forwarded_acc == 0:
-                if (self.branch_prediction["jumped"]):
-                    self.branch_prediction["correct"] += 1
-                else:
-                    self.branch_prediction["incorr"] += 1
+                if(self.branch_prediction["method"] == "none"):
                     self.PC = instruction.operand & 0xFF
                     self.flush_for_control_hazard()
+                else:
+                    if (self.branch_prediction["jumped"]):
+                        self.branch_prediction["correct"] += 1
+                        self.branch_prediction["TP"] += 1
+                    else:
+                        self.branch_prediction["incorr"] += 1
+                        self.branch_prediction["FN"] += 1
+                        self.PC = instruction.operand & 0xFF
+                        self.flush_for_control_hazard()
+                    self.branch_prediction["taken"] += 1
             else:
                 if (self.branch_prediction["jumped"]):
                     self.branch_prediction["incorr"] += 1
+                    self.branch_prediction["FP"] += 1
                     self.PC = self.branch_prediction.get("last_PC", self.PC) + 1
                     self.flush_for_control_hazard()
                 else:
                     self.branch_prediction["correct"] += 1
+                    self.branch_prediction["TN"] += 1
+                self.branch_prediction["not_taken"] += 1
             self.EX_MEM = {"opcode": instruction.opcode, "operand": instruction.operand, "valid": True}
             self.perf_counters['instruction_mix']['JZ'] += 1
         elif instruction.opcode is Instruction.opcode_to_int("HALT"):
@@ -464,6 +513,7 @@ if __name__ == "__main__":
     # check for -v flag for verbose debugging prints
     DEBUG = True if sys.argv.count('-v') > 0 else False
     debug = False
+
     # process file passed through command line
     arg_mem_file = None
     if len(sys.argv) > 1 and "mem" in sys.argv[1]:
@@ -523,6 +573,13 @@ if __name__ == "__main__":
     # set pipelined to false for benchmarking non-pipelined execution
     # -p flag can be used to enable pipelined execution
     pipelined = False if sys.argv.count('-n') > 0 else True
+    # Check for branch method using -b switch
+    myCPU.branch_prediction["method"] = "none"   #Default: Branch Prediction Disabled
+    if "-b" in sys.argv:
+        index = sys.argv.index("-b")
+        if index + 1 < len(sys.argv):   # make sure there is something after -b
+            myCPU.branch_prediction["method"] = sys.argv[index + 1]
+
     total_cycles = myCPU.run(max_cycles=20000, start_pc=0, pipelined=pipelined)
 
     if debug:
@@ -548,3 +605,4 @@ if __name__ == "__main__":
     if output_mem_file:
         write_mem_file(output_mem_file, myCPU.MEM)
     myCPU.display_performance_counters()
+    myCPU.display_branch_prediction_metrics()
