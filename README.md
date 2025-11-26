@@ -57,6 +57,7 @@ The script can be executed directly from the command line with the following opt
     -n : if present then it runs the non pipelined version of ISA (used for benchmark comparison)
     -o <output.mem> : if present then writes final memory state to output.mem
     -v : enables verbose debugging prints
+    -b <branch prediction method name> : Supported values "none|static_taken|static_not_taken". Default: "none"
 
 ```bash
 python .\s12_pipeline.py .\Sort_genSize_bubbleTime_v2.mem -o bubble_pipe_result.mem
@@ -75,6 +76,9 @@ TODO:
     last taken
 
 The output will show a cycle-by-cycle trace of the pipeline registers and the final state of the CPU and memory after the test program has run.
+
+## Results
+https://docs.google.com/document/d/19y_f9T-7k6s3ZARMbt_PSGGBnxVr5tOTWchIOwNUZl8/edit?tab=t.0
 
 ## Demo Program
 If no file is given for input then it will run a small demo program
