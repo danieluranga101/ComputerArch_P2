@@ -101,7 +101,78 @@ class S12PipelineCPU:
             "FN": 0,   # predicted not taken, actual taken
             "TN": 0    # predicted not taken, actual not taken
         }
+        self.onebit = self.OneBitPredictor()
+        self.twobit = self.TwoBitPredictor()
 
+    class OneBitPredictor:
+        """
+        Simple 1-bit branch predictor:
+        - 1 = predict taken
+        - 0 = predict not taken
+        """
+        def __init__(self, table_size=64):
+            # Size of the Branch History Table (BHT)
+            self.table_size = table_size
+            # Initialize table entries to 0 (predict not taken)
+            self.table = [0] * table_size
+        
+        def predict(self, pc):
+            """
+            Predict branch outcome based on current PC.
+            Uses simple modulo indexing into BHT.
+            Returns 1 if branch predicted taken, else 0.
+            """
+            index = pc % self.table_size
+            return self.table[index]
+        
+        def update(self, pc, actual):
+            """
+            Update the predictor table with actual outcome.
+            Overwrites previous prediction (1-bit predictor).
+            """
+            index = pc % self.table_size
+            self.table[index] = actual  # store actual branch outcome
+
+
+    class TwoBitPredictor:
+        """
+        2-bit saturating counter predictor:
+            0: strongly not taken
+            1: weakly not taken
+            2: weakly taken
+            3: strongly taken
+        Predict taken if counter >= 2
+        """
+        def __init__(self, table_size=64):
+            # Size of BHT
+            self.table_size = table_size
+            # Initialize all counters to 0 (strongly not taken)
+            self.table = [0] * table_size
+
+        def predict(self, pc):
+            """
+            Predict branch outcome based on current PC.
+            Returns 1 if counter >= 2 (predict taken), else 0.
+            """
+            index = pc % self.table_size
+            return 1 if self.table[index] >= 2 else 0
+
+        def update(self, pc, actual):
+            """
+            Update the saturating counter based on actual branch outcome.
+            Counter saturates at 0 (min) and 3 (max) to avoid overflow.
+            """
+            index = pc % self.table_size
+            counter = self.table[index]
+
+            if actual == 1:  # branch taken
+                if counter < 3:
+                    counter += 1  # increment toward strongly taken
+            else:            # branch not taken
+                if counter > 0:
+                    counter -= 1  # decrement toward strongly not taken
+            
+            self.table[index] = counter
     
     def display_performance_counters(self):
         print("Performance Counters:")
@@ -225,6 +296,18 @@ class S12PipelineCPU:
                     case "static_taken":
                         self.PC = instruction_obj.operand & 0xFF
                         self.branch_prediction["jumped"] = True
+                    case "dynamic_1bit":
+                        self.branch_prediction["jumped"] = self.onebit.predict(self.PC)
+                        if (self.branch_prediction["jumped"]):
+                            self.PC = instruction_obj.operand & 0xFF
+                        else:
+                            self.PC+=1
+                    case "dynamic_2bit":
+                        self.branch_prediction["jumped"] = self.twobit.predict(self.PC)
+                        if (self.branch_prediction["jumped"]):
+                            self.PC = instruction_obj.operand & 0xFF
+                        else:
+                            self.PC+=1
                     case "none":
                         self.PC+=1
                     case _:
@@ -300,6 +383,10 @@ class S12PipelineCPU:
                 else:
                     self.branch_prediction["incorr"] += 1
                     self.branch_prediction["FN"] += 1
+                    if self.branch_prediction["method"] == "dynamic_1bit":
+                        self.onebit.update(self.branch_prediction.get("last_PC", self.PC), 1)
+                    elif self.branch_prediction["method"] == "dynamic_2bit":
+                        self.twobit.update(self.branch_prediction.get("last_PC", self.PC), 1)
                     self.PC = instruction.operand & 0xFF
                     self.flush_for_control_hazard()
             self.branch_prediction["taken"] += 1
@@ -320,6 +407,10 @@ class S12PipelineCPU:
                     else:
                         self.branch_prediction["incorr"] += 1
                         self.branch_prediction["FN"] += 1
+                        if self.branch_prediction["method"] == "dynamic_1bit":
+                            self.onebit.update(self.branch_prediction.get("last_PC", self.PC), 1)
+                        elif self.branch_prediction["method"] == "dynamic_2bit":
+                            self.twobit.update(self.branch_prediction.get("last_PC", self.PC), 1)
                         self.PC = instruction.operand & 0xFF
                         self.flush_for_control_hazard()
                 self.branch_prediction["taken"] += 1
@@ -327,6 +418,10 @@ class S12PipelineCPU:
                 if (self.branch_prediction["jumped"]):
                     self.branch_prediction["incorr"] += 1
                     self.branch_prediction["FP"] += 1
+                    if self.branch_prediction["method"] == "dynamic_1bit":
+                        self.onebit.update(self.branch_prediction.get("last_PC", self.PC), 0)
+                    elif self.branch_prediction["method"] == "dynamic_2bit":
+                        self.twobit.update(self.branch_prediction.get("last_PC", self.PC), 0)
                     self.PC = self.branch_prediction.get("last_PC", self.PC) + 1
                     self.flush_for_control_hazard()
                 else:
@@ -349,6 +444,10 @@ class S12PipelineCPU:
                     else:
                         self.branch_prediction["incorr"] += 1
                         self.branch_prediction["FN"] += 1
+                        if self.branch_prediction["method"] == "dynamic_1bit":
+                            self.onebit.update(self.branch_prediction.get("last_PC", self.PC), 1)
+                        elif self.branch_prediction["method"] == "dynamic_2bit":
+                            self.twobit.update(self.branch_prediction.get("last_PC", self.PC), 1)
                         self.PC = instruction.operand & 0xFF
                         self.flush_for_control_hazard()
                     self.branch_prediction["taken"] += 1
@@ -356,6 +455,10 @@ class S12PipelineCPU:
                 if (self.branch_prediction["jumped"]):
                     self.branch_prediction["incorr"] += 1
                     self.branch_prediction["FP"] += 1
+                    if self.branch_prediction["method"] == "dynamic_1bit":
+                        self.onebit.update(self.branch_prediction.get("last_PC", self.PC), 0)
+                    elif self.branch_prediction["method"] == "dynamic_2bit":
+                        self.twobit.update(self.branch_prediction.get("last_PC", self.PC), 0)
                     self.PC = self.branch_prediction.get("last_PC", self.PC) + 1
                     self.flush_for_control_hazard()
                 else:
