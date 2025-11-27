@@ -1,6 +1,6 @@
 # 5-Stage Pipelined CPU Simulator
 
-This Python program simulates a 5-stage pipelined CPU architecture with an 8-bit accumulator model. It implements the pipeline stages — Instruction Fetch (IF), Instruction Decode (ID), Execute (EX), and Memory Access/Write-Back (MEM/WB) — without hazard detection or forwarding.
+This Python program simulates a 5-stage pipelined CPU architecture with an 8-bit accumulator model. It implements the pipeline stages — Instruction Fetch (IF), Instruction Decode (ID), Execute (EX), and Memory Access/Write-Back (MEM/WB) — without hazard detection or forwarding. It also supports static and dynamic branch predictions.
 
 ## CPU Architecture
 
@@ -64,7 +64,6 @@ python .\s12_pipeline.py .\Sort_genSize_bubbleTime_v2.mem -o bubble_pipe_result.
 ```
 
 ## Branch Prediction
-TODO:
 1. Static branch prediction:
     always take
     never take
@@ -72,8 +71,8 @@ TODO:
     take backwards
 
 2. Dynamic branch prediction
-    counter
-    last taken
+    1-bit Predictor with Branch History Table
+    2-bit Predictor with Branch History Table
 
 The output will show a cycle-by-cycle trace of the pipeline registers and the final state of the CPU and memory after the test program has run.
 
