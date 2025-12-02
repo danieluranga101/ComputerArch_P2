@@ -293,6 +293,7 @@ class S12PipelineCPU:
                 match self.branch_prediction["method"]:
                     case "static_not_taken":
                         self.PC+=1
+                        self.branch_prediction["jumped"] = False
                     case "static_taken":
                         self.PC = instruction_obj.operand & 0xFF
                         self.branch_prediction["jumped"] = True
@@ -308,8 +309,23 @@ class S12PipelineCPU:
                             self.PC = instruction_obj.operand & 0xFF
                         else:
                             self.PC+=1
+                    case "take_forward":
+                        if (instruction_obj.operand & 0xFF) > self.PC:
+                            self.PC = instruction_obj.operand & 0xFF
+                            self.branch_prediction["jumped"] = True
+                        else:
+                            self.PC+=1
+                            self.branch_prediction["jumped"] = False
+                    case "take_backward":
+                        if (instruction_obj.operand & 0xFF) < self.PC:
+                            self.PC = instruction_obj.operand & 0xFF
+                            self.branch_prediction["jumped"] = True
+                        else:
+                            self.PC+=1
+                            self.branch_prediction["jumped"] = False
                     case "none":
                         self.PC+=1
+                        self.branch_prediction["jumped"] = False
                     case _:
                         print("Unknown branch prediction method")
                         pass
