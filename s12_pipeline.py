@@ -308,6 +308,16 @@ class S12PipelineCPU:
                             self.PC = instruction_obj.operand & 0xFF
                         else:
                             self.PC+=1
+                    case "take_forward":
+                        if (instruction_obj.operand & 0xFF) > self.PC:
+                            self.PC = instruction_obj.operand & 0xFF
+                            self.branch_prediction["jumped"] = True
+                        else:
+                            self.PC+=1
+                    case "take_backward":
+                        if (instruction_obj.operand & 0xFF) < self.PC:
+                            self.PC = instruction_obj.operand & 0xFF
+                            self.branch_prediction["jumped"] = True
                     case "none":
                         self.PC+=1
                     case _:
