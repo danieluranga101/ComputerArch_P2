@@ -285,8 +285,7 @@ class S12PipelineCPU:
                 "valid": True
             }
             instruction_obj = Instruction.binary_to_instruction(instruction)
-            if instruction_obj.opcode in (Instruction.opcode_to_int("JMP"),
-                                          Instruction.opcode_to_int("JN"),
+            if instruction_obj.opcode in (Instruction.opcode_to_int("JN"),
                                           Instruction.opcode_to_int("JZ")):
                 printg(f"IF: Branch instruction detected: {instruction_obj.opcode_to_string()}")
                 self.branch_prediction["last_PC"] = self.PC
@@ -329,6 +328,8 @@ class S12PipelineCPU:
                     case _:
                         print("Unknown branch prediction method")
                         pass
+            elif instruction_obj.opcode is Instruction.opcode_to_int("JMP"):
+                self.PC = instruction_obj.operand & 0xFF
             else:
                 self.PC+=1
 
@@ -389,23 +390,6 @@ class S12PipelineCPU:
             self.perf_counters['instruction_mix'][instruction_str] += 1
         elif instruction.opcode is Instruction.opcode_to_int("JMP"):
             # Unconditional jump
-            if(self.branch_prediction["method"] == "none"):
-                self.PC = instruction.operand & 0xFF
-                self.flush_for_control_hazard()
-            else:
-                if (self.branch_prediction["jumped"]):
-                    self.branch_prediction["correct"] += 1
-                    self.branch_prediction["TP"] += 1
-                else:
-                    self.branch_prediction["incorr"] += 1
-                    self.branch_prediction["FN"] += 1
-                    if self.branch_prediction["method"] == "dynamic_1bit":
-                        self.onebit.update(self.branch_prediction.get("last_PC", self.PC), 1)
-                    elif self.branch_prediction["method"] == "dynamic_2bit":
-                        self.twobit.update(self.branch_prediction.get("last_PC", self.PC), 1)
-                    self.PC = instruction.operand & 0xFF
-                    self.flush_for_control_hazard()
-            self.branch_prediction["taken"] += 1
             self.EX_MEM = {"opcode": instruction.opcode, "operand": instruction.operand, "valid": True}
             self.perf_counters['instruction_mix']['JMP'] += 1
         elif instruction.opcode is Instruction.opcode_to_int("JN"):
